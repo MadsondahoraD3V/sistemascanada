@@ -11,7 +11,7 @@ import json
 import time
 
 # ==========================================
-# 1. CONFIGURAÇÕES VISUAIS E CSS (ENTERPRISE UX + FLUID DESIGN)
+# 1. CONFIGURAÇÕES VISUAIS E CSS (ENTERPRISE UX + FLUIDO DESIGN)
 # ==========================================
 st.set_page_config(page_title="Canadá BI - Corporate", layout="wide")
 
