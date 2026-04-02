@@ -1,0 +1,6 @@
+streamlit
+streamlit-authenticator
+pdfplumber
+pandas
+plotly
+supabase
