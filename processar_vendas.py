@@ -129,7 +129,10 @@ try:
 except:
     db_users = {"admin": {"name": "Admin", "password": "123"}}
 
-auth = stauth.Authenticate(db_users, "canada_bi_v3", "sig_key_2024", expiry_days=30)
+# AQUI ESTÁ A CORREÇÃO: Colocando a lista de usuários dentro da chave 'usernames'
+config_auth = {"usernames": db_users}
+
+auth = stauth.Authenticate(config_auth, "canada_bi_v3", "sig_key_2024", expiry_days=30)
 
 if not st.session_state.get("authentication_status"):
     st.markdown("<h1 style='text-align: center; color: #3b82f6;'>🇨🇦 Canadá BI</h1>", unsafe_allow_html=True)
@@ -179,7 +182,6 @@ else:
                 selecionados = st.multiselect("Pesquise e selecione os itens (Ex: TRELOSO):", options=lista_sugestoes)
                 nova_cat = st.selectbox("Mover para:", ["Tabacaria", "Bebidas Alcoólicas", "Bomboniere", "Sorvetes", "Mercearia", "Higiene"])
                 
-                # O Aviso de Confirmação
                 if selecionados:
                     st.info(f"⚠️ **Atenção:** Você marcou **{len(selecionados)}** itens para serem classificados como **{nova_cat}**.")
                 
