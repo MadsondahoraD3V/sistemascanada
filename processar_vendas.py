@@ -6,7 +6,6 @@ import pandas as pd
 import unicodedata
 from datetime import datetime, date
 import os
-import time
 from supabase import create_client, Client
 
 # ==========================================
@@ -219,7 +218,7 @@ def gerar_html_interativo(df, periodo, total_geral, nome_arquivo):
     </html>"""
 
 # ==========================================
-# 4. MOTORES LÓGICOS
+# 4. MOTORES LÓGICOS 
 # ==========================================
 
 def limpar_nome_produto(nome_bruto):
@@ -227,13 +226,30 @@ def limpar_nome_produto(nome_bruto):
     nome = re.sub(r'\d{1,2}-[a-zA-Z]{3}(-\d{2,4})?', '', nome) 
     return nome.replace('.', '').replace('-', '').strip()[:25]
 
+# NOVA LIMPEZA (BLINDADA CONTRA CABEÇALHOS DE PDF E DATAS)
 def limpar_linha_estoque(linha):
-    ignorar = ["MERCADINHO", "ENDEREÇO", "PAGINA", "ESTOQUE", "GESTÃO", "SMB STORE", "CNPJ", "TELEFONE", "CÓDIGO"]
+    ignorar = [
+        "MERCADINHO", "ENDEREÇO", "PAGINA", "ESTOQUE", "GESTÃO", "SMB STORE", 
+        "CNPJ", "TELEFONE", "CÓDIGO", "PERÍODO", "PERIODO", "DATA", "NR. VENDA", 
+        "DESCRIÇÃO", "CUSTO", "BRUTO", "LÍQUIDO", "LIQUIDO", "LUCRO", "DESCONTO",
+        "VALOR", "UNIT", "QTDE", "TOTAL"
+    ]
     if any(p in linha.upper() for p in ignorar): return ""
-    n = re.sub(r'\b\d{13,14}\b', '', linha)
+    
+    # Destrói datas para que não virem nomes de produtos
+    n = re.sub(r'\d{2}/\d{2}/\d{4}', '', linha)
+    
+    # Remove EANs e códigos internos
+    n = re.sub(r'\b\d{13,14}\b', '', n)
     n = re.sub(r'^\s*\d{1,7}\s+', '', n)
     n = re.sub(r'[.\-/"\']', '', n)
-    return n.strip().upper()
+    n = n.strip().upper()
+    
+    # Ignora linhas que ficaram curtas ou viraram apenas números/letras de conectivos
+    if n.isdigit() or len(n) < 7: return ""
+    if n == 'À' or n == 'A': return ""
+    
+    return n
 
 @st.cache_data(ttl=10)
 def carregar_regras_banco():
@@ -347,10 +363,23 @@ def consumir_cota(username):
             supabase.table("usuarios").update({"limite_pdf": novo_limite}).eq("username", username).execute()
 
 # ==========================================
-# 5. AUTENTICAÇÃO E ROTEAMENTO
+# 5. INJEÇÃO DE USUÁRIO E AUTENTICAÇÃO
 # ==========================================
 try:
     res_user = supabase.table("usuarios").select("*").execute()
+    
+    if not any(u['username'] == 'joacildo' for u in res_user.data):
+        try:
+            supabase.table("usuarios").insert({
+                "username": "joacildo", 
+                "name": "Joacildo", 
+                "password": "canada2026",
+                "limite_pdf": 10,
+                "vencimento": "2026-12-31"
+            }).execute()
+            res_user = supabase.table("usuarios").select("*").execute()
+        except: pass
+
     db_users = {u['username']: {"name": u['name'], "password": u['password']} for u in res_user.data}
     dados_logados = {u['username']: u for u in res_user.data}
 except:
@@ -599,7 +628,7 @@ else:
                                 "acesso_excecoes": False
                             }).execute()
                             st.success(f"Cliente '{n_nome}' cadastrado com sucesso!")
-                            time.sleep(1) # Pausa dramática para mostrar o sucesso e recarregar
+                            time.sleep(1)
                             st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao salvar. Verifique se o login já existe.")
@@ -613,23 +642,20 @@ else:
                     if u['username'] in ["madson", "admin"]: continue
                     
                     with st.expander(f"👤 {u['name']} (@{u['username']})"):
-                        # ==========================================
-                        # O st.form ABAIXO BLINDA OS CAMPOS E EVITA ATUALIZAÇÃO AUTOMÁTICA
-                        # ==========================================
                         with st.form(key=f"form_edit_{u['username']}"):
                             c1, c2, c3 = st.columns(3)
                             with c1:
-                                nova_cota = st.number_input("Cota PDFs", min_value=0, value=int(u.get("limite_pdf", 10)), step=1, key=f"cota_{u['username']}")
+                                nova_cota = st.number_input("Cota PDFs", min_value=0, value=int(u.get("limite_pdf", 10)), step=1)
                             with c2:
                                 venc_str = u.get("vencimento", "2026-12-31")
                                 try: venc_atual = datetime.strptime(venc_str, "%Y-%m-%d").date()
                                 except: venc_atual = date(2026, 12, 31)
-                                nova_data = st.date_input("Vencimento", value=venc_atual, key=f"data_{u['username']}")
+                                nova_data = st.date_input("Vencimento", value=venc_atual)
                             with c3:
                                 st.markdown("<br>", unsafe_allow_html=True)
-                                novo_batch = st.checkbox("Liberar Lote", value=bool(u.get("acesso_lote", False)), key=f"lote_{u['username']}")
+                                novo_batch = st.checkbox("Liberar Lote", value=bool(u.get("acesso_lote", False)))
                             
-                            nova_senha = st.text_input("Nova Senha (deixe em branco para manter)", type="password", key=f"senha_{u['username']}")
+                            nova_senha = st.text_input("Nova Senha (deixe em branco para manter)", type="password")
                             
                             col_salvar, col_apagar = st.columns(2)
                             with col_salvar:
