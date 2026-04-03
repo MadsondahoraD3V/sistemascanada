@@ -218,7 +218,7 @@ def gerar_html_interativo(df, periodo, total_geral, nome_arquivo):
     </html>"""
 
 # ==========================================
-# 4. MOTORES LÓGICOS ANTI-FALHAS E MATEMÁTICA CORRIGIDA
+# 4. MOTORES LÓGICOS (CÁLCULO DINÂMICO DE COLUNAS)
 # ==========================================
 
 def limpar_nome_produto(nome_bruto):
@@ -310,9 +310,19 @@ def processar_pdf(file):
     regras = carregar_regras_banco()
     file.seek(0)
     with pdfplumber.open(file) as pdf:
-        txt_topo = (pdf.pages[0].extract_text() or "")
+        txt_topo = (pdf.pages[0].extract_text() or "").upper()
         match_d = re.search(r'(\d{2}/\d{2}/\d{4})\s*[AÀaà]\s*(\d{2}/\d{2}/\d{4})', txt_topo)
         periodo = f"{match_d.group(1)} a {match_d.group(2)}" if match_d else "DATA DESCONHECIDA"
+        
+        # ---------------------------------------------------------
+        # A MÁGICA ESTÁ AQUI: IDENTIFICAÇÃO DINÂMICA DA COLUNA!
+        # Se o relatório tiver a coluna "LUCRO", o V.Bruto recua 4 casas.
+        # Se NÃO tiver a coluna "LUCRO", o V.Bruto recua apenas 3 casas.
+        # ---------------------------------------------------------
+        if "LUCRO" in txt_topo:
+            idx_bruto = -4
+        else:
+            idx_bruto = -3
         
         for page in pdf.pages:
             texto_limpo = (page.extract_text() or "").replace('"', '').replace('\r', '')
@@ -320,26 +330,22 @@ def processar_pdf(file):
             for linha in linhas:
                 if "TOTAL" in linha.upper() or "PÁGINA" in linha.upper(): continue
                 try:
-                    # Captura qualquer número com casa decimal e separador de milhar
-                    valores = re.findall(r'[\d\.]+,\d{2}', linha)
+                    # Usando regex blindado para não quebrar em números altos como 1.250,00
+                    valores = re.findall(r'(?:\d{1,3}(?:\.\d{3})*|\d+),\d{2}', linha)
                     if len(valores) >= 4:
                         ean_m = re.search(r'\b\d{7,14}\b', linha)
                         if not ean_m: continue
                         
                         str_sem_ean = linha.replace(ean_m.group(), "").strip()
-                        
-                        # CAPTURA DO NOME EXATO: Pega tudo antes do primeiro valor numérico da linha
-                        n_bruto = str_sem_ean.split(valores[0])[0].strip()
+                        partes = re.split(r'\s*\b\d+,\d{2}\b', str_sem_ean)
+                        n_bruto = partes[0].strip()
                         n_bruto = re.sub(r'\s+(UN|KG|CX|PCT|L|ML|G|KIT|M|DZ|BD|FD)\b$', '', n_bruto, flags=re.IGNORECASE).strip()
+                        
                         nome_limpo = limpar_nome_produto(n_bruto)
                         
-                        # CAPTURA DO VALOR BRUTO EXATO:
-                        # As colunas são Qtd | V.Unit | V.Bruto | V.Desc | V.Liquido
-                        # O Valor Bruto é ESTRITAMENTE o 3º item contando do final (posição -3)
-                        v_bruto_str = valores[-3]
-                        
-                        # Converte '1.200,50' para float sem dar erro de matemática
-                        val = float(v_bruto_str.replace('.', '').replace(',', '.'))
+                        # Extração perfeita removendo ponto de milhar antes da conta
+                        v_bruto_str = valores[idx_bruto].replace('.', '').replace(',', '.')
+                        val = float(v_bruto_str)
                         
                         cat, is_fallback = palpite_categoria(nome_limpo, regras)
                         dados.append({"Nome": nome_limpo, "Cat": cat, "Valor": val, "Fallback": is_fallback})
@@ -435,7 +441,7 @@ else:
                 with st.spinner("Motor de Inteligência processando o arquivo..."):
                     dados, per = processar_pdf(file)
                 df = pd.DataFrame(dados)
-                total_bruto = df['Valor'].sum()
+                total_bruto = df['Valor'].sum() if not df.empty else 0
 
                 col_topo1, col_topo2, col_topo3 = st.columns([4.5, 3.0, 2.5])
                 with col_topo1:
@@ -443,9 +449,10 @@ else:
                     st.markdown(f"<p style='color:#64748b; font-size:clamp(9px, 1vw, 11px); margin-top:2px; margin-bottom:0px; text-transform:uppercase; letter-spacing:1px;'>Período Auditado: <b style='color:#38bdf8;'>{per}</b></p>", unsafe_allow_html=True)
                     st.markdown(f"<p style='color:#475569; font-size:9px; margin-top:0px; margin-bottom:0px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>Arquivo origem: <i>{file.name}</i></p>", unsafe_allow_html=True)
                 with col_topo2:
-                    html_rel = gerar_html_interativo(df, per, total_bruto, file.name)
-                    nome_arquivo_html = f"RELATORIO DE {per.replace('/', '-').replace(' a ', '_a_')}.html"
-                    st.download_button(label="📥 Baixar Relatório HTML", data=html_rel, file_name=nome_arquivo_html, mime="text/html", use_container_width=True)
+                    if not df.empty:
+                        html_rel = gerar_html_interativo(df, per, total_bruto, file.name)
+                        nome_arquivo_html = f"RELATORIO DE {per.replace('/', '-').replace(' a ', '_a_')}.html"
+                        st.download_button(label="📥 Baixar Relatório HTML", data=html_rel, file_name=nome_arquivo_html, mime="text/html", use_container_width=True)
                 with col_topo3:
                     if st.button("🔄 Novo Upload", use_container_width=True):
                         st.session_state.arquivo_carregado = None
@@ -456,12 +463,12 @@ else:
                 
                 col_filtros, col_total, col_detalhes = st.columns([3.5, 3.5, 5], gap="large")
                 selecionadas = []
-                categorias_pdf = sorted(df['Cat'].unique())
+                categorias_pdf = sorted(df['Cat'].unique()) if not df.empty else []
                 
                 with col_filtros:
                     st.markdown("<h4 style='color:#94a3b8; font-size:10px; margin-bottom:10px; text-transform:uppercase; letter-spacing:1px;'>Categorias</h4>", unsafe_allow_html=True)
                     for cat in categorias_pdf:
-                        v = df[df['Cat'] == cat]['Valor'].sum() if not df.empty else 0
+                        v = df[df['Cat'] == cat]['Valor'].sum()
                         c_chk, c_btn, c_val = st.columns([1, 6, 4])
                         with c_chk:
                             if st.checkbox("", value=True, key=f"chk_{cat}"): selecionadas.append(cat)
@@ -488,7 +495,7 @@ else:
 
                 with col_detalhes:
                     st.markdown("<h4 style='color:#94a3b8; font-size:10px; margin-bottom:10px; text-transform:uppercase; letter-spacing:1px;'>Detalhamento do Relatório</h4>", unsafe_allow_html=True)
-                    if st.session_state.cat_expandida:
+                    if st.session_state.cat_expandida and not df.empty:
                         cat_atual = st.session_state.cat_expandida
                         itens = df[df['Cat'] == cat_atual]
                         st.markdown("<style>.detalhe-panel { background:rgba(15, 23, 42, 0.6); backdrop-filter: blur(8px); padding:15px; border-radius:12px; border:1px solid rgba(255,255,255,0.05); box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.3s ease; } .detalhe-panel:hover { box-shadow: 0 10px 20px rgba(0,0,0,0.2); border-left: 2px solid #38bdf8; }</style>", unsafe_allow_html=True)
@@ -500,15 +507,16 @@ else:
                     else:
                         st.markdown("""<div style="background:rgba(15, 23, 42, 0.4); padding:20px; border-radius:12px; text-align:center; border: 1px dashed rgba(255,255,255,0.1);"><p style="color:#64748b; font-size:11px; font-weight:500; margin:0;">Selecione uma categoria ao lado para inspecionar os itens.</p></div>""", unsafe_allow_html=True)
 
-                st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin:10px 0;'>", unsafe_allow_html=True)
+                st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin-top:15px; margin-bottom:20px;'>", unsafe_allow_html=True)
                 
                 with st.expander("🔎 Auditoria do Motor (Itens sem Regra Específica)"):
-                    df_fallback = df[df['Fallback'] == True]
-                    if not df_fallback.empty:
-                        st.markdown("<p style='color:#94a3b8; font-size:11px;'>Os itens abaixo foram alocados em <b>Mercearia</b> por não acionarem nenhuma palavra-chave oficial.</p>", unsafe_allow_html=True)
-                        st.dataframe(df_fallback[['Nome', 'Valor']], use_container_width=True, hide_index=True)
-                    else:
-                        st.success("Excelente! O motor reconheceu 100% dos itens lidos.")
+                    if not df.empty:
+                        df_fallback = df[df['Fallback'] == True]
+                        if not df_fallback.empty:
+                            st.markdown("<p style='color:#94a3b8; font-size:11px;'>Os itens abaixo foram alocados em <b>Mercearia</b> por não acionarem nenhuma palavra-chave oficial.</p>", unsafe_allow_html=True)
+                            st.dataframe(df_fallback[['Nome', 'Valor']], use_container_width=True, hide_index=True)
+                        else:
+                            st.success("Excelente! O motor reconheceu 100% dos itens lidos.")
 
     elif pagina == "Gerar Multiplos Relatorios":
         if not is_admin and not info_usr.get("acesso_lote"): pass
