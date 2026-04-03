@@ -6,6 +6,7 @@ import pandas as pd
 import unicodedata
 from datetime import datetime, date
 import os
+import time
 from supabase import create_client, Client
 
 # ==========================================
@@ -226,7 +227,6 @@ def limpar_nome_produto(nome_bruto):
     nome = re.sub(r'\d{1,2}-[a-zA-Z]{3}(-\d{2,4})?', '', nome) 
     return nome.replace('.', '').replace('-', '').strip()[:25]
 
-# NOVA LIMPEZA (BLINDADA CONTRA CABEÇALHOS DE PDF E DATAS)
 def limpar_linha_estoque(linha):
     ignorar = [
         "MERCADINHO", "ENDEREÇO", "PAGINA", "ESTOQUE", "GESTÃO", "SMB STORE", 
@@ -236,16 +236,12 @@ def limpar_linha_estoque(linha):
     ]
     if any(p in linha.upper() for p in ignorar): return ""
     
-    # Destrói datas para que não virem nomes de produtos
     n = re.sub(r'\d{2}/\d{2}/\d{4}', '', linha)
-    
-    # Remove EANs e códigos internos
     n = re.sub(r'\b\d{13,14}\b', '', n)
     n = re.sub(r'^\s*\d{1,7}\s+', '', n)
     n = re.sub(r'[.\-/"\']', '', n)
     n = n.strip().upper()
     
-    # Ignora linhas que ficaram curtas ou viraram apenas números/letras de conectivos
     if n.isdigit() or len(n) < 7: return ""
     if n == 'À' or n == 'A': return ""
     
@@ -412,9 +408,6 @@ else:
 
     st.sidebar.markdown(f"<h3 style='color:#ffffff; font-size:clamp(12px, 1.2vw, 15px); font-weight:700; margin-bottom: 12px;'>Olá, {st.session_state['name']}</h3>", unsafe_allow_html=True)
     
-    # -----------------------------------------------------
-    # BLOQUEIO DE MENUS PARA USUÁRIOS COMUNS
-    # -----------------------------------------------------
     css_bloqueio = ""
     if not is_admin:
         css_bloqueio += """
@@ -455,9 +448,6 @@ else:
     if not is_admin and (date.today() > trial_end or cota_usuario <= 0):
         bloqueado = True
 
-    # -----------------------------------------------------
-    # ABA 1: ANÁLISE PADRÃO
-    # -----------------------------------------------------
     if pagina == "Análise de Relatório":
         if bloqueado:
             st.error("Acesso Expirado ou Sem Cotas. Contate o Administrador para renovar seu plano.")
@@ -551,23 +541,17 @@ else:
                         else:
                             st.success("Excelente! O motor reconheceu 100% dos itens lidos.")
 
-    # -----------------------------------------------------
-    # ABA 2: MULTIPLOS RELATÓRIOS
-    # -----------------------------------------------------
     elif pagina == "Gerar Multiplos Relatorios":
         if not is_admin and not info_usr.get("acesso_lote"): pass
         else:
             st.markdown("<h2 style='color:#ffffff; font-size:clamp(18px, 2vw, 26px); font-weight:800; letter-spacing:-0.5px; margin-top:-10px;'>Processamento em Lote</h2>", unsafe_allow_html=True)
             st.info("🟢 Módulo ativado. Em breve, a função de múltiplos processamentos simultâneos estará disponível.")
 
-    # -----------------------------------------------------
-    # ABA 3: CONFIGURAÇÕES DE ESTOQUE
-    # -----------------------------------------------------
     elif pagina == "Configurações de Estoque":
         if not is_admin and not info_usr.get("acesso_excecoes"): pass
         else:
             st.markdown("<h2 style='color:#ffffff; font-size:clamp(18px, 2vw, 26px); font-weight:800; margin-bottom: 20px; letter-spacing:-0.5px; margin-top:-10px;'>Configurações de Estoque</h2>", unsafe_allow_html=True)
-            tab_sync, tab_bulk = st.tabs(["📥 Sincronizar Estoque Oficial", "🔥 Atribuição em Massa"])
+            tab_sync, tab_bulk, tab_manage = st.tabs(["📥 Sincronizar Estoque Oficial", "🔥 Atribuição em Massa", "🗑️ Limpar Memória"])
 
             with tab_sync:
                 pdf_est = st.file_uploader("PDF de Estoque (Lista Limpa)", type="pdf", key="sync_pdf")
@@ -599,10 +583,36 @@ else:
                             st.cache_data.clear()
                             st.success(f"✅ Itens configurados com sucesso.")
                             st.rerun()
+            
+            with tab_manage:
+                st.markdown("<h4 style='color:#38bdf8; font-size:13px; text-transform:uppercase; margin-bottom:15px;'>Gerenciamento do Banco de Dados</h4>", unsafe_allow_html=True)
+                st.write("Veja tudo o que o sistema aprendeu e apague itens indesejados (como datas e cabeçalhos).")
+                
+                try:
+                    res_memoria = supabase.table("historico_produtos").select("nome_produto").order("nome_produto").execute()
+                    if res_memoria.data:
+                        df_memoria = pd.DataFrame(res_memoria.data)
+                        
+                        col_tabela, col_delete = st.columns([1.5, 1])
+                        with col_tabela:
+                            st.dataframe(df_memoria, use_container_width=True, height=250)
+                        with col_delete:
+                            st.markdown("<div style='background:rgba(15, 23, 42, 0.6); padding:15px; border-radius:12px; border:1px solid rgba(255,255,255,0.05);'>", unsafe_allow_html=True)
+                            item_to_delete = st.selectbox("Escolha o item para apagar:", [""] + df_memoria['nome_produto'].tolist())
+                            if st.button("🗑️ Deletar Item", type="primary", use_container_width=True):
+                                if item_to_delete:
+                                    supabase.table("historico_produtos").delete().eq("nome_produto", item_to_delete).execute()
+                                    supabase.table("excecoes_categorias").delete().eq("nome_produto", item_to_delete).execute()
+                                    st.cache_data.clear()
+                                    st.success("Item apagado da memória!")
+                                    time.sleep(1)
+                                    st.rerun()
+                            st.markdown("</div>", unsafe_allow_html=True)
+                    else:
+                        st.info("O banco de dados está vazio.")
+                except Exception as e:
+                    st.error(f"Erro ao carregar banco de dados: {e}")
 
-    # -----------------------------------------------------
-    # ABA 4: CENTRAL DE PERMISSÕES (FORMULÁRIOS BLINDADOS)
-    # -----------------------------------------------------
     elif pagina == "Central de Permissões":
         if not is_admin: pass
         else:
@@ -645,17 +655,17 @@ else:
                         with st.form(key=f"form_edit_{u['username']}"):
                             c1, c2, c3 = st.columns(3)
                             with c1:
-                                nova_cota = st.number_input("Cota PDFs", min_value=0, value=int(u.get("limite_pdf", 10)), step=1)
+                                nova_cota = st.number_input("Cota PDFs", min_value=0, value=int(u.get("limite_pdf", 10)), step=1, key=f"cota_{u['username']}")
                             with c2:
                                 venc_str = u.get("vencimento", "2026-12-31")
                                 try: venc_atual = datetime.strptime(venc_str, "%Y-%m-%d").date()
                                 except: venc_atual = date(2026, 12, 31)
-                                nova_data = st.date_input("Vencimento", value=venc_atual)
+                                nova_data = st.date_input("Vencimento", value=venc_atual, key=f"data_{u['username']}")
                             with c3:
                                 st.markdown("<br>", unsafe_allow_html=True)
-                                novo_batch = st.checkbox("Liberar Lote", value=bool(u.get("acesso_lote", False)))
+                                novo_batch = st.checkbox("Liberar Lote", value=bool(u.get("acesso_lote", False)), key=f"lote_{u['username']}")
                             
-                            nova_senha = st.text_input("Nova Senha (deixe em branco para manter)", type="password")
+                            nova_senha = st.text_input("Nova Senha (deixe em branco para manter)", type="password", key=f"senha_{u['username']}")
                             
                             col_salvar, col_apagar = st.columns(2)
                             with col_salvar:
