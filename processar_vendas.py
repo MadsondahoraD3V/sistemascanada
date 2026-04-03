@@ -1,5 +1,6 @@
 import streamlit as st
 import streamlit_authenticator as stauth
+import streamlit.components.v1 as components  # MÓDULO NOVO PARA EMBUTIR O SISTEMA
 import pdfplumber
 import re
 import pandas as pd
@@ -409,26 +410,28 @@ else:
     st.sidebar.markdown(f"<h3 style='color:#ffffff; font-size:clamp(12px, 1.2vw, 15px); font-weight:700; margin-bottom: 12px;'>Olá, {st.session_state['name']}</h3>", unsafe_allow_html=True)
     
     # -----------------------------------------------------
-    # BLOQUEIO DE MENUS PARA USUÁRIOS COMUNS
+    # BLOQUEIO DE MENUS PARA USUÁRIOS COMUNS (AJUSTADO PARA A NOVA ABA)
     # -----------------------------------------------------
     css_bloqueio = ""
     if not is_admin:
+        # Bloqueia Configurações de Estoque (Aba 4)
         css_bloqueio += """
-        div[role="radiogroup"] > label:nth-child(3) { opacity: 0.3 !important; filter: grayscale(100%) !important; cursor: not-allowed !important; pointer-events: auto !important; }
-        div[role="radiogroup"] > label:nth-child(3):hover::after { content: "Acesso Restrito. Contate Administrador."; position: absolute; top: 100%; left: 0%; width: 100%; background: #e11d48; color: white; padding: 5px 0; border-radius: 6px; font-size: 10px; text-align: center; z-index: 99999; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        
         div[role="radiogroup"] > label:nth-child(4) { opacity: 0.3 !important; filter: grayscale(100%) !important; cursor: not-allowed !important; pointer-events: auto !important; }
-        div[role="radiogroup"] > label:nth-child(4):hover::after { content: "Acesso Exclusivo do Administrador."; position: absolute; top: 100%; left: 0%; width: 100%; background: #e11d48; color: white; padding: 5px 0; border-radius: 6px; font-size: 10px; text-align: center; z-index: 99999; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        div[role="radiogroup"] > label:nth-child(4):hover::after { content: "Acesso Restrito. Contate Administrador."; position: absolute; top: 100%; left: 0%; width: 100%; background: #e11d48; color: white; padding: 5px 0; border-radius: 6px; font-size: 10px; text-align: center; z-index: 99999; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        
+        div[role="radiogroup"] > label:nth-child(5) { opacity: 0.3 !important; filter: grayscale(100%) !important; cursor: not-allowed !important; pointer-events: auto !important; }
+        div[role="radiogroup"] > label:nth-child(5):hover::after { content: "Acesso Exclusivo do Administrador."; position: absolute; top: 100%; left: 0%; width: 100%; background: #e11d48; color: white; padding: 5px 0; border-radius: 6px; font-size: 10px; text-align: center; z-index: 99999; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         """
+        # Bloqueia Lote (Aba 3)
         if not info_usr.get("acesso_lote"):
             css_bloqueio += """
-            div[role="radiogroup"] > label:nth-child(2) { opacity: 0.3 !important; filter: grayscale(100%) !important; cursor: not-allowed !important; pointer-events: auto !important; }
-            div[role="radiogroup"] > label:nth-child(2):hover::after { content: "Assinatura não contempla lotes."; position: absolute; top: 100%; left: 0%; width: 100%; background: #e11d48; color: white; padding: 5px 0; border-radius: 6px; font-size: 10px; text-align: center; z-index: 99999; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+            div[role="radiogroup"] > label:nth-child(3) { opacity: 0.3 !important; filter: grayscale(100%) !important; cursor: not-allowed !important; pointer-events: auto !important; }
+            div[role="radiogroup"] > label:nth-child(3):hover::after { content: "Assinatura não contempla lotes."; position: absolute; top: 100%; left: 0%; width: 100%; background: #e11d48; color: white; padding: 5px 0; border-radius: 6px; font-size: 10px; text-align: center; z-index: 99999; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
             """
             
     st.markdown(f"<style>{css_bloqueio}</style>", unsafe_allow_html=True)
 
-    opcoes_menu = ["Análise de Relatório", "Gerar Multiplos Relatorios", "Configurações de Estoque", "Central de Permissões"]
+    opcoes_menu = ["Análise de Relatório", "Terminal de Vendas (POS)", "Gerar Multiplos Relatorios", "Configurações de Estoque", "Central de Permissões"]
     pagina = st.sidebar.radio("Navegação", opcoes_menu, label_visibility="collapsed")
     st.sidebar.markdown("---")
     
@@ -488,7 +491,7 @@ else:
                         st.session_state.cat_expandida = None
                         st.rerun()
 
-                st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin:top:10px; margin-bottom:15px;'>", unsafe_allow_html=True)
+                st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin-top:10px; margin-bottom:15px;'>", unsafe_allow_html=True)
                 
                 col_filtros, col_total, col_detalhes = st.columns([3.5, 3.5, 5], gap="large")
                 selecionadas = []
@@ -548,7 +551,17 @@ else:
                             st.success("Excelente! O motor reconheceu 100% dos itens lidos.")
 
     # -----------------------------------------------------
-    # ABA 2: MULTIPLOS RELATÓRIOS
+    # NOVA ABA: TERMINAL DE VENDAS (POS EMBUTIDO)
+    # -----------------------------------------------------
+    elif pagina == "Terminal de Vendas (POS)":
+        if bloqueado:
+            st.error("Acesso Expirado ou Sem Cotas. Contate o Administrador para renovar seu plano.")
+        else:
+            st.markdown("<h2 style='color:#ffffff; font-size:clamp(18px, 2vw, 26px); font-weight:800; margin-top:-10px; margin-bottom:20px; letter-spacing:-0.5px;'>Terminal de Vendas (POS)</h2>", unsafe_allow_html=True)
+            components.iframe("https://canada-sistema-de-vendas.vercel.app/", height=800, scrolling=True)
+
+    # -----------------------------------------------------
+    # ABA 3: MULTIPLOS RELATÓRIOS
     # -----------------------------------------------------
     elif pagina == "Gerar Multiplos Relatorios":
         if not is_admin and not info_usr.get("acesso_lote"): pass
@@ -557,7 +570,7 @@ else:
             st.info("🟢 Módulo ativado. Em breve, a função de múltiplos processamentos simultâneos estará disponível.")
 
     # -----------------------------------------------------
-    # ABA 3: CONFIGURAÇÕES DE ESTOQUE
+    # ABA 4: CONFIGURAÇÕES DE ESTOQUE
     # -----------------------------------------------------
     elif pagina == "Configurações de Estoque":
         if not is_admin and not info_usr.get("acesso_excecoes"): pass
@@ -584,41 +597,61 @@ else:
                 except: lista_sugestoes = []
 
                 if lista_sugestoes:
-                    st.markdown("<p style='color:#94a3b8; font-size:13px;'>💡 <b>Dica de Ouro:</b> Passe o mouse sobre a tabela abaixo e clique no ícone da <b>Lupa (🔍)</b> no canto superior direito dela. Digite por exemplo <i>PIPOS</i>, marque as caixinhas, apague a busca e digite outro nome. O sistema vai memorizar todos os que você marcar!</p>", unsafe_allow_html=True)
+                    if 'marcados_bulk' not in st.session_state:
+                        st.session_state.marcados_bulk = set()
+                        
+                    st.markdown("<p style='color:#94a3b8; font-size:13px;'>💡 <b>Dica:</b> Use a caixa de pesquisa abaixo para encontrar produtos. Você pode pesquisar, marcar, apagar a pesquisa e buscar outro. O sistema memoriza todos os marcados!</p>", unsafe_allow_html=True)
                     
+                    busca = st.text_input("🔍 Pesquisar produto (digite e aperte Enter):", "").upper()
+                    
+                    if busca:
+                        lista_filtrada = [p for p in lista_sugestoes if busca in p.upper()]
+                    else:
+                        lista_filtrada = lista_sugestoes
+                        
                     df_sugestoes = pd.DataFrame({
-                        "Selecionar": [False] * len(lista_sugestoes),
-                        "Produto": lista_sugestoes
+                        "Selecionar": [p in st.session_state.marcados_bulk for p in lista_filtrada],
+                        "Produto": lista_filtrada
                     })
                     
-                    with st.form("form_bulk_move"):
-                        df_editado = st.data_editor(
-                            df_sugestoes,
-                            column_config={
-                                "Selecionar": st.column_config.CheckboxColumn("✔ Marcar", default=False, width="small"),
-                                "Produto": st.column_config.TextColumn("Nome do Produto no Estoque", disabled=True, width="large")
-                            },
-                            hide_index=True,
-                            use_container_width=True,
-                            height=350
-                        )
+                    df_editado = st.data_editor(
+                        df_sugestoes,
+                        column_config={
+                            "Selecionar": st.column_config.CheckboxColumn("✔ Marcar", default=False, width="small"),
+                            "Produto": st.column_config.TextColumn("Nome do Produto no Estoque", disabled=True, width="large")
+                        },
+                        hide_index=True,
+                        use_container_width=True,
+                        height=350,
+                        key="editor_bulk"
+                    )
+                    
+                    marcados_agora = df_editado[df_editado["Selecionar"] == True]["Produto"].tolist()
+                    desmarcados_agora = df_editado[df_editado["Selecionar"] == False]["Produto"].tolist()
+                    
+                    for p in marcados_agora: st.session_state.marcados_bulk.add(p)
+                    for p in desmarcados_agora: st.session_state.marcados_bulk.discard(p)
                         
-                        nova_cat = st.selectbox("Mover todos os marcados para a categoria:", ["Tabacaria", "Bebidas Alcoólicas", "Bomboniere", "Sorvetes", "Mercearia", "Higiene"])
-                        
-                        btn_massa = st.form_submit_button("🔥 APLICAR REGRA EM TODOS OS MARCADOS")
-                        
-                        if btn_massa:
-                            selecionados = df_editado[df_editado["Selecionar"] == True]["Produto"].tolist()
-                            if selecionados:
-                                with st.spinner(f"Processando {len(selecionados)} itens..."):
-                                    batch = [{"nome_produto": p, "categoria_destino": nova_cat} for p in selecionados]
-                                    supabase.table("excecoes_categorias").upsert(batch, on_conflict="nome_produto").execute()
-                                    st.cache_data.clear()
-                                    st.success(f"✅ {len(selecionados)} itens configurados com sucesso.")
-                                    time.sleep(1.5)
-                                    st.rerun()
-                            else:
-                                st.warning("⚠️ Marque pelo menos um produto na caixinha antes de aplicar.")
+                    if st.session_state.marcados_bulk:
+                        st.success(f"📌 Você selecionou **{len(st.session_state.marcados_bulk)}** produto(s) no total.")
+                    
+                    nova_cat = st.selectbox("Mover todos os marcados para a categoria:", ["Tabacaria", "Bebidas Alcoólicas", "Bomboniere", "Sorvetes", "Mercearia", "Higiene"])
+                    
+                    btn_massa = st.button("🔥 APLICAR REGRA EM TODOS OS MARCADOS", use_container_width=True)
+                    
+                    if btn_massa:
+                        selecionados = list(st.session_state.marcados_bulk)
+                        if selecionados:
+                            with st.spinner(f"Processando {len(selecionados)} itens..."):
+                                batch = [{"nome_produto": p, "categoria_destino": nova_cat} for p in selecionados]
+                                supabase.table("excecoes_categorias").upsert(batch, on_conflict="nome_produto").execute()
+                                st.session_state.marcados_bulk.clear()
+                                st.cache_data.clear()
+                                st.success(f"✅ {len(selecionados)} itens configurados com sucesso.")
+                                time.sleep(1.5)
+                                st.rerun()
+                        else:
+                            st.warning("⚠️ Marque pelo menos um produto na caixinha antes de aplicar.")
                 else:
                     st.info("Sincronize o estoque oficial primeiro (aba ao lado) para ver a lista de produtos aqui.")
             
@@ -652,7 +685,7 @@ else:
                     st.error(f"Erro ao carregar banco de dados: {e}")
 
     # -----------------------------------------------------
-    # ABA 4: CENTRAL DE PERMISSÕES
+    # ABA 5: CENTRAL DE PERMISSÕES
     # -----------------------------------------------------
     elif pagina == "Central de Permissões":
         if not is_admin: pass
