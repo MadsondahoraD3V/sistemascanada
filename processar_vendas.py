@@ -6,6 +6,7 @@ import pandas as pd
 import unicodedata
 from datetime import datetime, date
 import os
+import time
 from supabase import create_client, Client
 
 # ==========================================
@@ -218,7 +219,7 @@ def gerar_html_interativo(df, periodo, total_geral, nome_arquivo):
     </html>"""
 
 # ==========================================
-# 4. MOTORES LÓGICOS E PROCESSAMENTO
+# 4. MOTORES LÓGICOS
 # ==========================================
 
 def limpar_nome_produto(nome_bruto):
@@ -314,16 +315,13 @@ def processar_pdf(file):
         match_d = re.search(r'(\d{2}/\d{2}/\d{4})\s*[AÀaà]\s*(\d{2}/\d{2}/\d{4})', txt_topo)
         periodo = f"{match_d.group(1)} a {match_d.group(2)}" if match_d else "DATA DESCONHECIDA"
         
-        if "LUCRO" in txt_topo: idx_bruto = -4
-        else: idx_bruto = -3
-        
         for page in pdf.pages:
             texto_limpo = (page.extract_text() or "").replace('"', '').replace('\r', '')
             linhas = texto_limpo.split('\n')
             for linha in linhas:
                 if "TOTAL" in linha.upper() or "PÁGINA" in linha.upper(): continue
                 try:
-                    valores = re.findall(r'(?:\d{1,3}(?:\.\d{3})*|\d+),\d{2}', linha)
+                    valores = re.findall(r'\d+,\d{2}', linha)
                     if len(valores) >= 4:
                         ean_m = re.search(r'\b\d{7,14}\b', linha)
                         if not ean_m: continue
@@ -334,8 +332,7 @@ def processar_pdf(file):
                         n_bruto = re.sub(r'\s+(UN|KG|CX|PCT|L|ML|G|KIT|M|DZ|BD|FD)\b$', '', n_bruto, flags=re.IGNORECASE).strip()
                         
                         nome_limpo = limpar_nome_produto(n_bruto)
-                        v_bruto_str = valores[idx_bruto].replace('.', '').replace(',', '.')
-                        val = float(v_bruto_str)
+                        val = float(valores[-4].replace(',', '.'))
                         
                         cat, is_fallback = palpite_categoria(nome_limpo, regras)
                         dados.append({"Nome": nome_limpo, "Cat": cat, "Valor": val, "Fallback": is_fallback})
@@ -466,7 +463,7 @@ else:
                         st.session_state.cat_expandida = None
                         st.rerun()
 
-                st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin:top:10px; margin-bottom:15px;'>", unsafe_allow_html=True)
+                st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin-top:10px; margin-bottom:15px;'>", unsafe_allow_html=True)
                 
                 col_filtros, col_total, col_detalhes = st.columns([3.5, 3.5, 5], gap="large")
                 selecionadas = []
@@ -575,7 +572,7 @@ else:
                             st.rerun()
 
     # -----------------------------------------------------
-    # ABA 4: CENTRAL DE PERMISSÕES (SALVAMENTO ISOLADO NO FORM)
+    # ABA 4: CENTRAL DE PERMISSÕES (FORMULÁRIOS BLINDADOS)
     # -----------------------------------------------------
     elif pagina == "Central de Permissões":
         if not is_admin: pass
@@ -602,9 +599,10 @@ else:
                                 "acesso_excecoes": False
                             }).execute()
                             st.success(f"Cliente '{n_nome}' cadastrado com sucesso!")
+                            time.sleep(1) # Pausa dramática para mostrar o sucesso e recarregar
                             st.rerun()
-                        except:
-                            st.error("Erro ao salvar. Verifique se o login já existe.")
+                        except Exception as e:
+                            st.error(f"Erro ao salvar. Verifique se o login já existe.")
                 st.markdown("</div>", unsafe_allow_html=True)
 
             with tab_gerenciar:
@@ -615,21 +613,23 @@ else:
                     if u['username'] in ["madson", "admin"]: continue
                     
                     with st.expander(f"👤 {u['name']} (@{u['username']})"):
-                        # O ST.FORM AQUI É O QUE BLINDA OS CLIQUES E EVITA RECARREGAR A TELA
+                        # ==========================================
+                        # O st.form ABAIXO BLINDA OS CAMPOS E EVITA ATUALIZAÇÃO AUTOMÁTICA
+                        # ==========================================
                         with st.form(key=f"form_edit_{u['username']}"):
                             c1, c2, c3 = st.columns(3)
                             with c1:
-                                nova_cota = st.number_input("Cota PDFs", min_value=0, value=int(u.get("limite_pdf", 10)), step=1)
+                                nova_cota = st.number_input("Cota PDFs", min_value=0, value=int(u.get("limite_pdf", 10)), step=1, key=f"cota_{u['username']}")
                             with c2:
                                 venc_str = u.get("vencimento", "2026-12-31")
                                 try: venc_atual = datetime.strptime(venc_str, "%Y-%m-%d").date()
                                 except: venc_atual = date(2026, 12, 31)
-                                nova_data = st.date_input("Vencimento", value=venc_atual)
+                                nova_data = st.date_input("Vencimento", value=venc_atual, key=f"data_{u['username']}")
                             with c3:
                                 st.markdown("<br>", unsafe_allow_html=True)
-                                novo_batch = st.checkbox("Liberar Lote", value=bool(u.get("acesso_lote", False)))
+                                novo_batch = st.checkbox("Liberar Lote", value=bool(u.get("acesso_lote", False)), key=f"lote_{u['username']}")
                             
-                            nova_senha = st.text_input("Nova Senha (deixe em branco para manter)", type="password")
+                            nova_senha = st.text_input("Nova Senha (deixe em branco para manter)", type="password", key=f"senha_{u['username']}")
                             
                             col_salvar, col_apagar = st.columns(2)
                             with col_salvar:
@@ -646,10 +646,12 @@ else:
                                 if nova_senha: update_data["password"] = nova_senha
                                 supabase.table("usuarios").update(update_data).eq("username", u['username']).execute()
                                 st.success("Atualizado!")
+                                time.sleep(1)
                                 st.rerun()
                                 
                             if btn_deletar:
                                 supabase.table("usuarios").delete().eq("username", u['username']).execute()
                                 st.warning("Deletado!")
+                                time.sleep(1)
                                 st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
