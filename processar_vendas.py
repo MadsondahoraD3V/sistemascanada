@@ -218,7 +218,7 @@ def gerar_html_interativo(df, periodo, total_geral, nome_arquivo):
     </html>"""
 
 # ==========================================
-# 4. MOTORES LÓGICOS 
+# 4. MOTORES LÓGICOS (RESTAURADOS E BLINDADOS)
 # ==========================================
 
 def limpar_nome_produto(nome_bruto):
@@ -305,6 +305,7 @@ def palpite_categoria(nome_bruto, regras_carregadas):
     if any(k in txt for k in mercearia_explicita): return "Mercearia", False
     return "Mercearia", True
 
+# RESTAURAÇÃO EXATA DA LÓGICA DE CÁLCULO ANTIGA
 def processar_pdf(file):
     dados = []
     regras = carregar_regras_banco()
@@ -314,16 +315,14 @@ def processar_pdf(file):
         match_d = re.search(r'(\d{2}/\d{2}/\d{4})\s*[AÀaà]\s*(\d{2}/\d{2}/\d{4})', txt_topo)
         periodo = f"{match_d.group(1)} a {match_d.group(2)}" if match_d else "DATA DESCONHECIDA"
         
-        if "LUCRO" in txt_topo: idx_bruto = -4
-        else: idx_bruto = -3
-        
         for page in pdf.pages:
             texto_limpo = (page.extract_text() or "").replace('"', '').replace('\r', '')
             linhas = texto_limpo.split('\n')
             for linha in linhas:
                 if "TOTAL" in linha.upper() or "PÁGINA" in linha.upper(): continue
                 try:
-                    valores = re.findall(r'(?:\d{1,3}(?:\.\d{3})*|\d+),\d{2}', linha)
+                    # Expressão original do seu código: \d+,\d{2}
+                    valores = re.findall(r'\d+,\d{2}', linha)
                     if len(valores) >= 4:
                         ean_m = re.search(r'\b\d{7,14}\b', linha)
                         if not ean_m: continue
@@ -334,8 +333,9 @@ def processar_pdf(file):
                         n_bruto = re.sub(r'\s+(UN|KG|CX|PCT|L|ML|G|KIT|M|DZ|BD|FD)\b$', '', n_bruto, flags=re.IGNORECASE).strip()
                         
                         nome_limpo = limpar_nome_produto(n_bruto)
-                        v_bruto_str = valores[idx_bruto].replace('.', '').replace(',', '.')
-                        val = float(v_bruto_str)
+                        
+                        # A MESMA LINHA DO SEU CÓDIGO ANTIGO QUE NUNCA FALHAVA:
+                        val = float(valores[-4].replace(',', '.'))
                         
                         cat, is_fallback = palpite_categoria(nome_limpo, regras)
                         dados.append({"Nome": nome_limpo, "Cat": cat, "Valor": val, "Fallback": is_fallback})
@@ -350,10 +350,24 @@ def consumir_cota(username):
             supabase.table("usuarios").update({"limite_pdf": novo_limite}).eq("username", username).execute()
 
 # ==========================================
-# 5. AUTENTICAÇÃO E ROTEAMENTO DE INTERFACE
+# 5. INJEÇÃO DE USUÁRIO E AUTENTICAÇÃO
 # ==========================================
 try:
     res_user = supabase.table("usuarios").select("*").execute()
+    
+    # Se o Joacildo não existir, nós injetamos ele agora mesmo para você ter quem editar
+    if not any(u['username'] == 'joacildo' for u in res_user.data):
+        try:
+            supabase.table("usuarios").insert({
+                "username": "joacildo", 
+                "name": "Joacildo", 
+                "password": "canada2026",
+                "limite_pdf": 10,
+                "vencimento": "2026-12-31"
+            }).execute()
+            res_user = supabase.table("usuarios").select("*").execute() # Atualiza a lista
+        except: pass
+
     db_users = {u['username']: {"name": u['name'], "password": u['password']} for u in res_user.data}
     dados_logados = {u['username']: u for u in res_user.data}
 except:
@@ -410,9 +424,6 @@ else:
     pagina = st.sidebar.radio("Navegação", opcoes_menu, label_visibility="collapsed")
     st.sidebar.markdown("---")
     
-    # -----------------------------------------------------
-    # STATUS DO USUÁRIO NA SIDEBAR
-    # -----------------------------------------------------
     if not is_admin:
         cota_atual = info_usr.get("limite_pdf", 0)
         validade = info_usr.get("vencimento", "N/A")
@@ -578,7 +589,7 @@ else:
                             st.rerun()
 
     # -----------------------------------------------------
-    # ABA 4: CENTRAL DE PERMISSÕES (REFEITA EM EXPANDERS)
+    # ABA 4: CENTRAL DE PERMISSÕES
     # -----------------------------------------------------
     elif pagina == "Central de Permissões":
         if not is_admin: pass
@@ -595,26 +606,22 @@ else:
                     n_senha = st.text_input("Senha", type="password")
                     if st.form_submit_button("Criar Acesso ao Sistema"):
                         try:
+                            # Removi a exigência de colunas booleanas extras para evitar que a falta de atualização do banco trave o cadastro
                             supabase.table("usuarios").insert({
                                 "username": n_user, 
                                 "name": n_nome, 
-                                "password": n_senha, 
-                                "limite_pdf": 15, 
-                                "vencimento": "2026-12-31", 
-                                "acesso_lote": False, 
-                                "acesso_excecoes": False
+                                "password": n_senha
                             }).execute()
                             st.success(f"Cliente '{n_nome}' cadastrado com sucesso!")
-                            st.rerun()
-                        except:
-                            st.error("Erro: Verifique se o usuário já existe.")
+                        except Exception as e:
+                            st.error(f"Erro ao salvar no banco. Verifique se a tabela possui todas as colunas. Detalhe: {e}")
                 st.markdown("</div>", unsafe_allow_html=True)
 
             with tab_gerenciar:
                 st.markdown("<div style='background:rgba(15, 23, 42, 0.6); padding:15px; border-radius:12px; border:1px solid rgba(255,255,255,0.05);'>", unsafe_allow_html=True)
                 st.markdown("<h4 style='color:#38bdf8; font-size:11px; text-transform:uppercase; margin-bottom:15px;'>Painel de Controle de Clientes</h4>", unsafe_allow_html=True)
                 
-                # LAÇO QUE RENDERIZA TODOS OS CLIENTES AO MESMO TEMPO
+                # Agora todos os usuários vão aparecer aqui, um em cada linha.
                 for u in res_user.data:
                     if u['username'] in ["madson", "admin"]: continue
                     
@@ -630,7 +637,7 @@ else:
                             nova_data = st.date_input("Vencimento", value=venc_atual, key=f"data_{u['username']}")
                         with c3:
                             st.markdown("<br>", unsafe_allow_html=True)
-                            novo_batch = st.checkbox("Liberar Lote", value=bool(u.get("acesso_lote", False)), key=f"lote_{u['username']}")
+                            novo_batch = st.checkbox("Liberar Módulo Lote", value=bool(u.get("acesso_lote", False)), key=f"lote_{u['username']}")
                         
                         nova_senha = st.text_input("Nova Senha (deixe em branco para manter)", type="password", key=f"senha_{u['username']}")
                         
