@@ -334,8 +334,12 @@ def processar_pdf(file):
                         n_bruto = re.sub(r'\s+(UN|KG|CX|PCT|L|ML|G|KIT|M|DZ|BD|FD)\b$', '', n_bruto, flags=re.IGNORECASE).strip()
                         
                         nome_limpo = limpar_nome_produto(n_bruto)
-                        # CORREÇÃO CRÍTICA DO VALOR: O -1 GARANTE QUE É O TOTAL DA LINHA E NÃO A QUANTIDADE
-                        val = float(valores[-1].replace(',', '.')) 
+                        
+                        # ========================================================
+                        # CORREÇÃO APLICADA AQUI: RESTAURADO PARA O VALOR [-4]
+                        # DA REGRA ORIGINAL DO MOTOR ANTIGO.
+                        # ========================================================
+                        val = float(valores[-4].replace(',', '.'))
                         
                         cat, is_fallback = palpite_categoria(nome_limpo, regras)
                         dados.append({"Nome": nome_limpo, "Cat": cat, "Valor": val, "Fallback": is_fallback})
