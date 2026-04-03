@@ -125,7 +125,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. HTML GERADOR DE RELATÓRIOS (INTOCADO)
+# 3. HTML GERADOR DE RELATÓRIOS
 # ==========================================
 CORES_CATEGORIAS = {
     "Tabacaria": {"bg": "rgba(30, 41, 59, 0.7)", "glow": "rgba(51, 65, 85, 0.4)", "border": "#475569"},
@@ -218,7 +218,7 @@ def gerar_html_interativo(df, periodo, total_geral, nome_arquivo):
     </html>"""
 
 # ==========================================
-# 4. MOTORES LÓGICOS (RESTAURADOS E BLINDADOS)
+# 4. MOTORES LÓGICOS E PROCESSAMENTO
 # ==========================================
 
 def limpar_nome_produto(nome_bruto):
@@ -305,7 +305,6 @@ def palpite_categoria(nome_bruto, regras_carregadas):
     if any(k in txt for k in mercearia_explicita): return "Mercearia", False
     return "Mercearia", True
 
-# RESTAURAÇÃO EXATA DA LÓGICA DE CÁLCULO ANTIGA
 def processar_pdf(file):
     dados = []
     regras = carregar_regras_banco()
@@ -315,14 +314,16 @@ def processar_pdf(file):
         match_d = re.search(r'(\d{2}/\d{2}/\d{4})\s*[AÀaà]\s*(\d{2}/\d{2}/\d{4})', txt_topo)
         periodo = f"{match_d.group(1)} a {match_d.group(2)}" if match_d else "DATA DESCONHECIDA"
         
+        if "LUCRO" in txt_topo: idx_bruto = -4
+        else: idx_bruto = -3
+        
         for page in pdf.pages:
             texto_limpo = (page.extract_text() or "").replace('"', '').replace('\r', '')
             linhas = texto_limpo.split('\n')
             for linha in linhas:
                 if "TOTAL" in linha.upper() or "PÁGINA" in linha.upper(): continue
                 try:
-                    # Expressão original do seu código: \d+,\d{2}
-                    valores = re.findall(r'\d+,\d{2}', linha)
+                    valores = re.findall(r'(?:\d{1,3}(?:\.\d{3})*|\d+),\d{2}', linha)
                     if len(valores) >= 4:
                         ean_m = re.search(r'\b\d{7,14}\b', linha)
                         if not ean_m: continue
@@ -333,9 +334,8 @@ def processar_pdf(file):
                         n_bruto = re.sub(r'\s+(UN|KG|CX|PCT|L|ML|G|KIT|M|DZ|BD|FD)\b$', '', n_bruto, flags=re.IGNORECASE).strip()
                         
                         nome_limpo = limpar_nome_produto(n_bruto)
-                        
-                        # A MESMA LINHA DO SEU CÓDIGO ANTIGO QUE NUNCA FALHAVA:
-                        val = float(valores[-4].replace(',', '.'))
+                        v_bruto_str = valores[idx_bruto].replace('.', '').replace(',', '.')
+                        val = float(v_bruto_str)
                         
                         cat, is_fallback = palpite_categoria(nome_limpo, regras)
                         dados.append({"Nome": nome_limpo, "Cat": cat, "Valor": val, "Fallback": is_fallback})
@@ -350,24 +350,10 @@ def consumir_cota(username):
             supabase.table("usuarios").update({"limite_pdf": novo_limite}).eq("username", username).execute()
 
 # ==========================================
-# 5. INJEÇÃO DE USUÁRIO E AUTENTICAÇÃO
+# 5. AUTENTICAÇÃO E ROTEAMENTO
 # ==========================================
 try:
     res_user = supabase.table("usuarios").select("*").execute()
-    
-    # Se o Joacildo não existir, nós injetamos ele agora mesmo para você ter quem editar
-    if not any(u['username'] == 'joacildo' for u in res_user.data):
-        try:
-            supabase.table("usuarios").insert({
-                "username": "joacildo", 
-                "name": "Joacildo", 
-                "password": "canada2026",
-                "limite_pdf": 10,
-                "vencimento": "2026-12-31"
-            }).execute()
-            res_user = supabase.table("usuarios").select("*").execute() # Atualiza a lista
-        except: pass
-
     db_users = {u['username']: {"name": u['name'], "password": u['password']} for u in res_user.data}
     dados_logados = {u['username']: u for u in res_user.data}
 except:
@@ -401,7 +387,7 @@ else:
     st.sidebar.markdown(f"<h3 style='color:#ffffff; font-size:clamp(12px, 1.2vw, 15px); font-weight:700; margin-bottom: 12px;'>Olá, {st.session_state['name']}</h3>", unsafe_allow_html=True)
     
     # -----------------------------------------------------
-    # BLOQUEIO DE MENUS
+    # BLOQUEIO DE MENUS PARA USUÁRIOS COMUNS
     # -----------------------------------------------------
     css_bloqueio = ""
     if not is_admin:
@@ -480,7 +466,7 @@ else:
                         st.session_state.cat_expandida = None
                         st.rerun()
 
-                st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin-top:10px; margin-bottom:15px;'>", unsafe_allow_html=True)
+                st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin:top:10px; margin-bottom:15px;'>", unsafe_allow_html=True)
                 
                 col_filtros, col_total, col_detalhes = st.columns([3.5, 3.5, 5], gap="large")
                 selecionadas = []
@@ -528,7 +514,7 @@ else:
                     else:
                         st.markdown("""<div style="background:rgba(15, 23, 42, 0.4); padding:20px; border-radius:12px; text-align:center; border: 1px dashed rgba(255,255,255,0.1);"><p style="color:#64748b; font-size:11px; font-weight:500; margin:0;">Selecione uma categoria ao lado para inspecionar os itens.</p></div>""", unsafe_allow_html=True)
 
-                st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin:15px; margin-bottom:20px;'>", unsafe_allow_html=True)
+                st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin:top:15px; margin-bottom:20px;'>", unsafe_allow_html=True)
                 
                 with st.expander("🔎 Auditoria do Motor (Itens sem Regra Específica)"):
                     if not df.empty:
@@ -589,7 +575,7 @@ else:
                             st.rerun()
 
     # -----------------------------------------------------
-    # ABA 4: CENTRAL DE PERMISSÕES
+    # ABA 4: CENTRAL DE PERMISSÕES (SALVAMENTO ISOLADO NO FORM)
     # -----------------------------------------------------
     elif pagina == "Central de Permissões":
         if not is_admin: pass
@@ -606,44 +592,52 @@ else:
                     n_senha = st.text_input("Senha", type="password")
                     if st.form_submit_button("Criar Acesso ao Sistema"):
                         try:
-                            # Removi a exigência de colunas booleanas extras para evitar que a falta de atualização do banco trave o cadastro
                             supabase.table("usuarios").insert({
                                 "username": n_user, 
                                 "name": n_nome, 
-                                "password": n_senha
+                                "password": n_senha, 
+                                "limite_pdf": 15, 
+                                "vencimento": "2026-12-31", 
+                                "acesso_lote": False, 
+                                "acesso_excecoes": False
                             }).execute()
                             st.success(f"Cliente '{n_nome}' cadastrado com sucesso!")
-                        except Exception as e:
-                            st.error(f"Erro ao salvar no banco. Verifique se a tabela possui todas as colunas. Detalhe: {e}")
+                            st.rerun()
+                        except:
+                            st.error("Erro ao salvar. Verifique se o login já existe.")
                 st.markdown("</div>", unsafe_allow_html=True)
 
             with tab_gerenciar:
                 st.markdown("<div style='background:rgba(15, 23, 42, 0.6); padding:15px; border-radius:12px; border:1px solid rgba(255,255,255,0.05);'>", unsafe_allow_html=True)
                 st.markdown("<h4 style='color:#38bdf8; font-size:11px; text-transform:uppercase; margin-bottom:15px;'>Painel de Controle de Clientes</h4>", unsafe_allow_html=True)
                 
-                # Agora todos os usuários vão aparecer aqui, um em cada linha.
                 for u in res_user.data:
                     if u['username'] in ["madson", "admin"]: continue
                     
                     with st.expander(f"👤 {u['name']} (@{u['username']})"):
-                        
-                        c1, c2, c3 = st.columns(3)
-                        with c1:
-                            nova_cota = st.number_input("Cota PDFs", min_value=0, value=int(u.get("limite_pdf", 10)), step=1, key=f"cota_{u['username']}")
-                        with c2:
-                            venc_str = u.get("vencimento", "2026-12-31")
-                            try: venc_atual = datetime.strptime(venc_str, "%Y-%m-%d").date()
-                            except: venc_atual = date(2026, 12, 31)
-                            nova_data = st.date_input("Vencimento", value=venc_atual, key=f"data_{u['username']}")
-                        with c3:
-                            st.markdown("<br>", unsafe_allow_html=True)
-                            novo_batch = st.checkbox("Liberar Módulo Lote", value=bool(u.get("acesso_lote", False)), key=f"lote_{u['username']}")
-                        
-                        nova_senha = st.text_input("Nova Senha (deixe em branco para manter)", type="password", key=f"senha_{u['username']}")
-                        
-                        col_salvar, col_apagar = st.columns(2)
-                        with col_salvar:
-                            if st.button("💾 Salvar Permissões", key=f"save_{u['username']}", use_container_width=True):
+                        # O ST.FORM AQUI É O QUE BLINDA OS CLIQUES E EVITA RECARREGAR A TELA
+                        with st.form(key=f"form_edit_{u['username']}"):
+                            c1, c2, c3 = st.columns(3)
+                            with c1:
+                                nova_cota = st.number_input("Cota PDFs", min_value=0, value=int(u.get("limite_pdf", 10)), step=1)
+                            with c2:
+                                venc_str = u.get("vencimento", "2026-12-31")
+                                try: venc_atual = datetime.strptime(venc_str, "%Y-%m-%d").date()
+                                except: venc_atual = date(2026, 12, 31)
+                                nova_data = st.date_input("Vencimento", value=venc_atual)
+                            with c3:
+                                st.markdown("<br>", unsafe_allow_html=True)
+                                novo_batch = st.checkbox("Liberar Lote", value=bool(u.get("acesso_lote", False)))
+                            
+                            nova_senha = st.text_input("Nova Senha (deixe em branco para manter)", type="password")
+                            
+                            col_salvar, col_apagar = st.columns(2)
+                            with col_salvar:
+                                btn_salvar = st.form_submit_button("💾 Salvar Permissões", use_container_width=True)
+                            with col_apagar:
+                                btn_deletar = st.form_submit_button("🗑️ Deletar Cliente", type="primary", use_container_width=True)
+                            
+                            if btn_salvar:
                                 update_data = {
                                     "limite_pdf": nova_cota,
                                     "vencimento": nova_data.strftime("%Y-%m-%d"),
@@ -653,8 +647,8 @@ else:
                                 supabase.table("usuarios").update(update_data).eq("username", u['username']).execute()
                                 st.success("Atualizado!")
                                 st.rerun()
-                        with col_apagar:
-                            if st.button("🗑️ Deletar Cliente", key=f"del_{u['username']}", use_container_width=True, type="primary"):
+                                
+                            if btn_deletar:
                                 supabase.table("usuarios").delete().eq("username", u['username']).execute()
                                 st.warning("Deletado!")
                                 st.rerun()
