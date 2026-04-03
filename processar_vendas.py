@@ -408,6 +408,9 @@ else:
 
     st.sidebar.markdown(f"<h3 style='color:#ffffff; font-size:clamp(12px, 1.2vw, 15px); font-weight:700; margin-bottom: 12px;'>Olá, {st.session_state['name']}</h3>", unsafe_allow_html=True)
     
+    # -----------------------------------------------------
+    # BLOQUEIO DE MENUS PARA USUÁRIOS COMUNS
+    # -----------------------------------------------------
     css_bloqueio = ""
     if not is_admin:
         css_bloqueio += """
@@ -448,6 +451,9 @@ else:
     if not is_admin and (date.today() > trial_end or cota_usuario <= 0):
         bloqueado = True
 
+    # -----------------------------------------------------
+    # ABA 1: ANÁLISE PADRÃO
+    # -----------------------------------------------------
     if pagina == "Análise de Relatório":
         if bloqueado:
             st.error("Acesso Expirado ou Sem Cotas. Contate o Administrador para renovar seu plano.")
@@ -482,7 +488,7 @@ else:
                         st.session_state.cat_expandida = None
                         st.rerun()
 
-                st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin-top:10px; margin-bottom:15px;'>", unsafe_allow_html=True)
+                st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin:top:10px; margin-bottom:15px;'>", unsafe_allow_html=True)
                 
                 col_filtros, col_total, col_detalhes = st.columns([3.5, 3.5, 5], gap="large")
                 selecionadas = []
@@ -541,12 +547,18 @@ else:
                         else:
                             st.success("Excelente! O motor reconheceu 100% dos itens lidos.")
 
+    # -----------------------------------------------------
+    # ABA 2: MULTIPLOS RELATÓRIOS
+    # -----------------------------------------------------
     elif pagina == "Gerar Multiplos Relatorios":
         if not is_admin and not info_usr.get("acesso_lote"): pass
         else:
             st.markdown("<h2 style='color:#ffffff; font-size:clamp(18px, 2vw, 26px); font-weight:800; letter-spacing:-0.5px; margin-top:-10px;'>Processamento em Lote</h2>", unsafe_allow_html=True)
             st.info("🟢 Módulo ativado. Em breve, a função de múltiplos processamentos simultâneos estará disponível.")
 
+    # -----------------------------------------------------
+    # ABA 3: CONFIGURAÇÕES DE ESTOQUE
+    # -----------------------------------------------------
     elif pagina == "Configurações de Estoque":
         if not is_admin and not info_usr.get("acesso_excecoes"): pass
         else:
@@ -571,18 +583,44 @@ else:
                     lista_sugestoes = [i['nome_produto'] for i in res_h.data]
                 except: lista_sugestoes = []
 
-                with st.form("form_bulk_move"):
-                    selecionados = st.multiselect("Pesquise e selecione os itens (Ex: TRELOSO):", options=lista_sugestoes)
-                    nova_cat = st.selectbox("Mover para:", ["Tabacaria", "Bebidas Alcoólicas", "Bomboniere", "Sorvetes", "Mercearia", "Higiene"])
+                if lista_sugestoes:
+                    st.markdown("<p style='color:#94a3b8; font-size:13px;'>💡 <b>Dica de Ouro:</b> Passe o mouse sobre a tabela abaixo e clique no ícone da <b>Lupa (🔍)</b> no canto superior direito dela. Digite por exemplo <i>PIPOS</i>, marque as caixinhas, apague a busca e digite outro nome. O sistema vai memorizar todos os que você marcar!</p>", unsafe_allow_html=True)
                     
-                    btn_massa = st.form_submit_button("🔥 APLICAR REGRA EM TODOS")
-                    if btn_massa and selecionados:
-                        with st.spinner(f"Processando..."):
-                            batch = [{"nome_produto": p, "categoria_destino": nova_cat} for p in selecionados]
-                            supabase.table("excecoes_categorias").upsert(batch, on_conflict="nome_produto").execute()
-                            st.cache_data.clear()
-                            st.success(f"✅ Itens configurados com sucesso.")
-                            st.rerun()
+                    df_sugestoes = pd.DataFrame({
+                        "Selecionar": [False] * len(lista_sugestoes),
+                        "Produto": lista_sugestoes
+                    })
+                    
+                    with st.form("form_bulk_move"):
+                        df_editado = st.data_editor(
+                            df_sugestoes,
+                            column_config={
+                                "Selecionar": st.column_config.CheckboxColumn("✔ Marcar", default=False, width="small"),
+                                "Produto": st.column_config.TextColumn("Nome do Produto no Estoque", disabled=True, width="large")
+                            },
+                            hide_index=True,
+                            use_container_width=True,
+                            height=350
+                        )
+                        
+                        nova_cat = st.selectbox("Mover todos os marcados para a categoria:", ["Tabacaria", "Bebidas Alcoólicas", "Bomboniere", "Sorvetes", "Mercearia", "Higiene"])
+                        
+                        btn_massa = st.form_submit_button("🔥 APLICAR REGRA EM TODOS OS MARCADOS")
+                        
+                        if btn_massa:
+                            selecionados = df_editado[df_editado["Selecionar"] == True]["Produto"].tolist()
+                            if selecionados:
+                                with st.spinner(f"Processando {len(selecionados)} itens..."):
+                                    batch = [{"nome_produto": p, "categoria_destino": nova_cat} for p in selecionados]
+                                    supabase.table("excecoes_categorias").upsert(batch, on_conflict="nome_produto").execute()
+                                    st.cache_data.clear()
+                                    st.success(f"✅ {len(selecionados)} itens configurados com sucesso.")
+                                    time.sleep(1.5)
+                                    st.rerun()
+                            else:
+                                st.warning("⚠️ Marque pelo menos um produto na caixinha antes de aplicar.")
+                else:
+                    st.info("Sincronize o estoque oficial primeiro (aba ao lado) para ver a lista de produtos aqui.")
             
             with tab_manage:
                 st.markdown("<h4 style='color:#38bdf8; font-size:13px; text-transform:uppercase; margin-bottom:15px;'>Gerenciamento do Banco de Dados</h4>", unsafe_allow_html=True)
@@ -613,6 +651,9 @@ else:
                 except Exception as e:
                     st.error(f"Erro ao carregar banco de dados: {e}")
 
+    # -----------------------------------------------------
+    # ABA 4: CENTRAL DE PERMISSÕES
+    # -----------------------------------------------------
     elif pagina == "Central de Permissões":
         if not is_admin: pass
         else:
@@ -655,17 +696,17 @@ else:
                         with st.form(key=f"form_edit_{u['username']}"):
                             c1, c2, c3 = st.columns(3)
                             with c1:
-                                nova_cota = st.number_input("Cota PDFs", min_value=0, value=int(u.get("limite_pdf", 10)), step=1, key=f"cota_{u['username']}")
+                                nova_cota = st.number_input("Cota PDFs", min_value=0, value=int(u.get("limite_pdf", 10)), step=1)
                             with c2:
                                 venc_str = u.get("vencimento", "2026-12-31")
                                 try: venc_atual = datetime.strptime(venc_str, "%Y-%m-%d").date()
                                 except: venc_atual = date(2026, 12, 31)
-                                nova_data = st.date_input("Vencimento", value=venc_atual, key=f"data_{u['username']}")
+                                nova_data = st.date_input("Vencimento", value=venc_atual)
                             with c3:
                                 st.markdown("<br>", unsafe_allow_html=True)
-                                novo_batch = st.checkbox("Liberar Lote", value=bool(u.get("acesso_lote", False)), key=f"lote_{u['username']}")
+                                novo_batch = st.checkbox("Liberar Lote", value=bool(u.get("acesso_lote", False)))
                             
-                            nova_senha = st.text_input("Nova Senha (deixe em branco para manter)", type="password", key=f"senha_{u['username']}")
+                            nova_senha = st.text_input("Nova Senha (deixe em branco para manter)", type="password")
                             
                             col_salvar, col_apagar = st.columns(2)
                             with col_salvar:
