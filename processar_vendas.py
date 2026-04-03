@@ -218,7 +218,7 @@ def gerar_html_interativo(df, periodo, total_geral, nome_arquivo):
     </html>"""
 
 # ==========================================
-# 4. MOTORES LÓGICOS (CÁLCULO DINÂMICO DE COLUNAS)
+# 4. MOTORES LÓGICOS 
 # ==========================================
 
 def limpar_nome_produto(nome_bruto):
@@ -314,11 +314,6 @@ def processar_pdf(file):
         match_d = re.search(r'(\d{2}/\d{2}/\d{4})\s*[AÀaà]\s*(\d{2}/\d{2}/\d{4})', txt_topo)
         periodo = f"{match_d.group(1)} a {match_d.group(2)}" if match_d else "DATA DESCONHECIDA"
         
-        # ---------------------------------------------------------
-        # A MÁGICA ESTÁ AQUI: IDENTIFICAÇÃO DINÂMICA DA COLUNA!
-        # Se o relatório tiver a coluna "LUCRO", o V.Bruto recua 4 casas.
-        # Se NÃO tiver a coluna "LUCRO", o V.Bruto recua apenas 3 casas.
-        # ---------------------------------------------------------
         if "LUCRO" in txt_topo:
             idx_bruto = -4
         else:
@@ -330,7 +325,6 @@ def processar_pdf(file):
             for linha in linhas:
                 if "TOTAL" in linha.upper() or "PÁGINA" in linha.upper(): continue
                 try:
-                    # Usando regex blindado para não quebrar em números altos como 1.250,00
                     valores = re.findall(r'(?:\d{1,3}(?:\.\d{3})*|\d+),\d{2}', linha)
                     if len(valores) >= 4:
                         ean_m = re.search(r'\b\d{7,14}\b', linha)
@@ -342,8 +336,6 @@ def processar_pdf(file):
                         n_bruto = re.sub(r'\s+(UN|KG|CX|PCT|L|ML|G|KIT|M|DZ|BD|FD)\b$', '', n_bruto, flags=re.IGNORECASE).strip()
                         
                         nome_limpo = limpar_nome_produto(n_bruto)
-                        
-                        # Extração perfeita removendo ponto de milhar antes da conta
                         v_bruto_str = valores[idx_bruto].replace('.', '').replace(',', '.')
                         val = float(v_bruto_str)
                         
@@ -360,7 +352,7 @@ def consumir_cota(username):
             supabase.table("usuarios").update({"limite_pdf": novo_limite}).eq("username", username).execute()
 
 # ==========================================
-# 5. AUTENTICAÇÃO E ROTEAMENTO DE INTERFACE (INTOCADO)
+# 5. AUTENTICAÇÃO E ROTEAMENTO DE INTERFACE
 # ==========================================
 try:
     res_user = supabase.table("usuarios").select("*").execute()
@@ -369,6 +361,7 @@ try:
 except:
     db_users = {"admin": {"name": "Admin", "password": "123"}}
     dados_logados = {}
+    res_user = type('obj', (object,), {'data': []})
 
 config_auth = {"usernames": db_users}
 authenticator = stauth.Authenticate(config_auth, "canada_bi_v60", "auth_key_v60", expiry_days=30)
@@ -395,39 +388,67 @@ else:
 
     st.sidebar.markdown(f"<h3 style='color:#ffffff; font-size:clamp(12px, 1.2vw, 15px); font-weight:700; margin-bottom: 12px;'>Olá, {st.session_state['name']}</h3>", unsafe_allow_html=True)
     
+    # -----------------------------------------------------
+    # BLOQUEIO DE MENUS (SOMENTE ADMIN ACESSA ALÉM DO PADRÃO)
+    # -----------------------------------------------------
     css_bloqueio = ""
     if not is_admin:
+        # Bloqueia Configurações de Estoque (3º item)
+        css_bloqueio += """
+        div[role="radiogroup"] > label:nth-child(3) { opacity: 0.3 !important; filter: grayscale(100%) !important; cursor: not-allowed !important; pointer-events: auto !important; }
+        div[role="radiogroup"] > label:nth-child(3):hover::after { content: "Acesso Restrito. Contate Administrador."; position: absolute; top: 100%; left: 0%; width: 100%; background: #e11d48; color: white; padding: 5px 0; border-radius: 6px; font-size: 10px; text-align: center; z-index: 99999; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        """
+        # Bloqueia Central de Permissões (4º item)
         css_bloqueio += """
         div[role="radiogroup"] > label:nth-child(4) { opacity: 0.3 !important; filter: grayscale(100%) !important; cursor: not-allowed !important; pointer-events: auto !important; }
         div[role="radiogroup"] > label:nth-child(4):hover::after { content: "Acesso Exclusivo do Administrador."; position: absolute; top: 100%; left: 0%; width: 100%; background: #e11d48; color: white; padding: 5px 0; border-radius: 6px; font-size: 10px; text-align: center; z-index: 99999; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         """
+        # Bloqueia Lote (2º item) caso a permissão individual (acesso_lote) esteja falsa
         if not info_usr.get("acesso_lote"):
             css_bloqueio += """
             div[role="radiogroup"] > label:nth-child(2) { opacity: 0.3 !important; filter: grayscale(100%) !important; cursor: not-allowed !important; pointer-events: auto !important; }
             div[role="radiogroup"] > label:nth-child(2):hover::after { content: "Assinatura não contempla lotes."; position: absolute; top: 100%; left: 0%; width: 100%; background: #e11d48; color: white; padding: 5px 0; border-radius: 6px; font-size: 10px; text-align: center; z-index: 99999; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
             """
-        if not info_usr.get("acesso_excecoes"):
-            css_bloqueio += """
-            div[role="radiogroup"] > label:nth-child(3) { opacity: 0.3 !important; filter: grayscale(100%) !important; cursor: not-allowed !important; pointer-events: auto !important; }
-            div[role="radiogroup"] > label:nth-child(3):hover::after { content: "Acesso Restrito. Contate Administrador."; position: absolute; top: 100%; left: 0%; width: 100%; background: #e11d48; color: white; padding: 5px 0; border-radius: 6px; font-size: 10px; text-align: center; z-index: 99999; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-            """
+            
     st.markdown(f"<style>{css_bloqueio}</style>", unsafe_allow_html=True)
 
-    opcoes_menu = ["Análise de Relatório", "Gerar Multiplos Relatorios", "Exceções e Permissões", "Central de Permissões"]
+    # NOVO NOME: "Configurações de Estoque"
+    opcoes_menu = ["Análise de Relatório", "Gerar Multiplos Relatorios", "Configurações de Estoque", "Central de Permissões"]
     pagina = st.sidebar.radio("Navegação", opcoes_menu, label_visibility="collapsed")
     st.sidebar.markdown("---")
     
+    # -----------------------------------------------------
+    # STATUS DO USUÁRIO NA SIDEBAR (COTA E DATA DE VALIDADE)
+    # -----------------------------------------------------
     if not is_admin:
         cota_atual = info_usr.get("limite_pdf", 0)
-        validade = info_usr.get("dias_trial", 0)
-        st.sidebar.markdown(f"<div style='background:rgba(255,255,255,0.02); padding:8px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);'><p style='color:#94a3b8; font-size:9px; margin:0;'>Uploads Restantes: <b style='color:#38bdf8; font-size:11px;'>{cota_atual}</b></p><p style='color:#94a3b8; font-size:9px; margin:4px 0 0 0;'>Dias de Acesso: <b style='color:#38bdf8; font-size:11px;'>{validade}</b></p></div>", unsafe_allow_html=True)
+        validade = info_usr.get("vencimento", "N/A")
+        try:
+            val_formatada = datetime.strptime(validade, "%Y-%m-%d").strftime("%d/%m/%Y")
+        except: val_formatada = validade
+            
+        st.sidebar.markdown(f"<div style='background:rgba(255,255,255,0.02); padding:8px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);'><p style='color:#94a3b8; font-size:9px; margin:0;'>Uploads Restantes: <b style='color:#38bdf8; font-size:11px;'>{cota_atual}</b></p><p style='color:#94a3b8; font-size:9px; margin:4px 0 0 0;'>Vencimento: <b style='color:#38bdf8; font-size:11px;'>{val_formatada}</b></p></div>", unsafe_allow_html=True)
 
     authenticator.logout("Encerrar Sessão", "sidebar")
 
+    # =======================================================
+    # VERIFICAÇÃO DE VENCIMENTO DO TRIAL PARA PERFIS COMUNS
+    # =======================================================
+    vencimento_str = info_usr.get("vencimento", "2099-12-31")
+    try: trial_end = datetime.strptime(vencimento_str, "%Y-%m-%d").date()
+    except: trial_end = date(2099, 12, 31)
+    cota_usuario = int(info_usr.get("limite_pdf", 0))
+
+    bloqueado = False
+    if not is_admin and (date.today() > trial_end or cota_usuario <= 0):
+        bloqueado = True
+
+    # -----------------------------------------------------
+    # ABA 1: ANÁLISE PADRÃO
+    # -----------------------------------------------------
     if pagina == "Análise de Relatório":
-        cota_usuario = info_usr.get("limite_pdf", 0)
-        if cota_usuario <= 0 and not is_admin:
-            st.error("Sem Cotas de Upload. Contate o Administrador.")
+        if bloqueado:
+            st.error("Acesso Expirado ou Sem Cotas. Contate o Administrador para renovar seu plano.")
         else:
             if st.session_state.arquivo_carregado is None:
                 st.markdown("<h2 style='color:#ffffff; font-size:clamp(18px, 2vw, 26px); font-weight:800; margin-top:-10px; letter-spacing:-0.5px;'>Análise de Relatório</h2>", unsafe_allow_html=True)
@@ -507,7 +528,7 @@ else:
                     else:
                         st.markdown("""<div style="background:rgba(15, 23, 42, 0.4); padding:20px; border-radius:12px; text-align:center; border: 1px dashed rgba(255,255,255,0.1);"><p style="color:#64748b; font-size:11px; font-weight:500; margin:0;">Selecione uma categoria ao lado para inspecionar os itens.</p></div>""", unsafe_allow_html=True)
 
-                st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin-top:15px; margin-bottom:20px;'>", unsafe_allow_html=True)
+                st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin:15px; margin-bottom:20px;'>", unsafe_allow_html=True)
                 
                 with st.expander("🔎 Auditoria do Motor (Itens sem Regra Específica)"):
                     if not df.empty:
@@ -518,16 +539,22 @@ else:
                         else:
                             st.success("Excelente! O motor reconheceu 100% dos itens lidos.")
 
+    # -----------------------------------------------------
+    # ABA 2: MULTIPLOS RELATÓRIOS
+    # -----------------------------------------------------
     elif pagina == "Gerar Multiplos Relatorios":
         if not is_admin and not info_usr.get("acesso_lote"): pass
         else:
             st.markdown("<h2 style='color:#ffffff; font-size:clamp(18px, 2vw, 26px); font-weight:800; letter-spacing:-0.5px; margin-top:-10px;'>Processamento em Lote</h2>", unsafe_allow_html=True)
             st.info("🟢 Módulo ativado. Em breve, a função de múltiplos processamentos simultâneos estará disponível.")
 
-    elif pagina == "Exceções e Permissões":
-        if not is_admin and not info_usr.get("acesso_excecoes"): pass
+    # -----------------------------------------------------
+    # ABA 3: CONFIGURAÇÕES DE ESTOQUE (ANTIGO EXCEÇÕES)
+    # -----------------------------------------------------
+    elif pagina == "Configurações de Estoque":
+        if not is_admin: pass
         else:
-            st.markdown("<h2 style='color:#ffffff; font-size:clamp(18px, 2vw, 26px); font-weight:800; margin-bottom: 20px; letter-spacing:-0.5px; margin-top:-10px;'>Inteligência e Catálogo</h2>", unsafe_allow_html=True)
+            st.markdown("<h2 style='color:#ffffff; font-size:clamp(18px, 2vw, 26px); font-weight:800; margin-bottom: 20px; letter-spacing:-0.5px; margin-top:-10px;'>Configurações de Estoque</h2>", unsafe_allow_html=True)
             tab_sync, tab_bulk = st.tabs(["📥 Sincronizar Estoque Oficial", "🔥 Atribuição em Massa"])
 
             with tab_sync:
@@ -561,6 +588,9 @@ else:
                             st.success(f"✅ Itens configurados com sucesso.")
                             st.rerun()
 
+    # -----------------------------------------------------
+    # ABA 4: CENTRAL DE PERMISSÕES ADMIN (REFORMULADA COM SELECTBOX)
+    # -----------------------------------------------------
     elif pagina == "Central de Permissões":
         if not is_admin: pass
         else:
@@ -576,7 +606,15 @@ else:
                     n_senha = st.text_input("Senha", type="password")
                     if st.form_submit_button("Criar Acesso ao Sistema"):
                         try:
-                            supabase.table("usuarios").insert({"username": n_user, "name": n_nome, "password": n_senha, "limite_pdf": 15, "dias_trial": 30, "acesso_lote": False, "acesso_excecoes": False}).execute()
+                            supabase.table("usuarios").insert({
+                                "username": n_user, 
+                                "name": n_nome, 
+                                "password": n_senha, 
+                                "limite_pdf": 15, 
+                                "vencimento": "2026-12-31", 
+                                "acesso_lote": False, 
+                                "acesso_excecoes": False
+                            }).execute()
                             st.success(f"Cliente '{n_nome}' cadastrado com sucesso!")
                             st.rerun()
                         except:
@@ -584,32 +622,50 @@ else:
                 st.markdown("</div>", unsafe_allow_html=True)
 
             with tab_gerenciar:
-                for u in res_user.data:
-                    if u['username'] in ["madson", "admin"]: continue
-                    with st.expander(f"👤 {u['name']} (@{u['username']})"):
-                        st.markdown("<p style='color:#94a3b8; font-size:11px; text-transform:uppercase;'>Configurações de Assinatura</p>", unsafe_allow_html=True)
-                        c1, c2, c3, c4 = st.columns(4)
-                        with c1: limite = st.number_input("Limite PDFs", value=u.get('limite_pdf', 10), key=f"l_{u['username']}")
-                        with c2: trial = st.number_input("Dias de Acesso", value=u.get('dias_trial', 7), key=f"t_{u['username']}")
-                        with c3:
-                            st.markdown("<br>", unsafe_allow_html=True)
-                            lote = st.checkbox("Módulo Lote", value=u.get('acesso_lote', False), key=f"b_{u['username']}")
-                        with c4:
-                            st.markdown("<br>", unsafe_allow_html=True)
-                            excecoes = st.checkbox("Módulo Inteligência", value=u.get('acesso_excecoes', False), key=f"e_{u['username']}")
+                st.markdown("<div style='background:rgba(15, 23, 42, 0.6); padding:15px; border-radius:12px; border:1px solid rgba(255,255,255,0.05);'>", unsafe_allow_html=True)
+                st.markdown("<h4 style='color:#38bdf8; font-size:11px; text-transform:uppercase; margin-bottom:10px;'>Editar Acesso Existente</h4>", unsafe_allow_html=True)
+                
+                # Coleta todos os usuários que não sejam os admins principais
+                usuarios_comuns = [u['username'] for u in res_user.data if u['username'] not in ["madson", "admin"]]
+                
+                usr_selecionado = st.selectbox("Selecione o Login (Cliente) para editar:", usuarios_comuns)
+                
+                if usr_selecionado:
+                    # Filtra os dados apenas do usuário escolhido
+                    dados_usr = next((u for u in res_user.data if u['username'] == usr_selecionado), {})
+                    
+                    with st.form("form_admin_edicao"):
+                        nova_senha = st.text_input("Nova Senha (deixe em branco para não alterar)", type="password")
+                        
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            nova_cota = st.number_input("Cota de PDFs Restantes", min_value=0, value=int(dados_usr.get("limite_pdf", 10)), step=1)
+                        with c2:
+                            # Prepara a data para o calendário
+                            venc_atual_str = dados_usr.get("vencimento", "2026-12-31")
+                            try: venc_atual = datetime.strptime(venc_atual_str, "%Y-%m-%d").date()
+                            except: venc_atual = date(2026, 12, 31)
+                            
+                            nova_data = st.date_input("Data de Expiração (Trial/Acesso)", value=venc_atual)
+                        
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        novo_batch = st.checkbox("Liberar acesso à 'Múltiplos Relatórios' (Lote)?", value=bool(dados_usr.get("acesso_lote", False)))
                         
                         st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin:10px 0;'>", unsafe_allow_html=True)
-                        nova_senha = st.text_input("Nova senha (deixe em branco para manter)", type="password", key=f"pw_{u['username']}")
-
-                        col_salvar, col_apagar = st.columns([1, 1])
-                        with col_salvar:
-                            if st.button("💾 Salvar Permissões", key=f"btn_{u['username']}", use_container_width=True):
-                                update_data = {"limite_pdf": limite, "dias_trial": trial, "acesso_lote": lote, "acesso_excecoes": excecoes}
-                                if nova_senha: update_data["password"] = nova_senha
-                                supabase.table("usuarios").update(update_data).eq("username", u['username']).execute()
-                                st.success("Atualizado!")
-                        with col_apagar:
-                            if st.button("🗑️ Deletar Cliente", key=f"del_{u['username']}", type="primary", use_container_width=True):
-                                supabase.table("usuarios").delete().eq("username", u['username']).execute()
-                                st.warning("Deletado!")
+                        
+                        if st.form_submit_button("Atualizar Cliente"):
+                            update_data = {
+                                "limite_pdf": nova_cota,
+                                "vencimento": nova_data.strftime("%Y-%m-%d"),
+                                "acesso_lote": novo_batch
+                            }
+                            if nova_senha: # Só altera a senha no banco se o admin digitou algo
+                                update_data["password"] = nova_senha
+                                
+                            try:
+                                supabase.table("usuarios").update(update_data).eq("username", usr_selecionado).execute()
+                                st.success("Acesso atualizado com sucesso!")
                                 st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao atualizar banco de dados: {e}")
+                st.markdown("</div>", unsafe_allow_html=True)
