@@ -179,7 +179,7 @@ else:
                 selecionados = st.multiselect("Pesquise e selecione os itens (Ex: TRELOSO):", options=lista_sugestoes)
                 nova_cat = st.selectbox("Mover para:", ["Tabacaria", "Bebidas Alcoólicas", "Bomboniere", "Sorvetes", "Mercearia", "Higiene"])
                 
-                # O Aviso de Confirmação que você pediu
+                # O Aviso de Confirmação
                 if selecionados:
                     st.info(f"⚠️ **Atenção:** Você marcou **{len(selecionados)}** itens para serem classificados como **{nova_cat}**.")
                 
