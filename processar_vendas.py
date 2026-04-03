@@ -132,6 +132,7 @@ CORES_CATEGORIAS = {
     "Bebidas Alcoólicas": {"bg": "rgba(30, 58, 138, 0.6)", "glow": "rgba(37, 99, 235, 0.3)", "border": "#3b82f6"},
     "Bomboniere": {"bg": "rgba(13, 148, 136, 0.6)", "glow": "rgba(20, 184, 166, 0.3)", "border": "#14b8a6"},
     "Sorvetes": {"bg": "rgba(219, 39, 119, 0.6)", "glow": "rgba(190, 24, 93, 0.3)", "border": "#db2777"},
+    "Remédios": {"bg": "rgba(190, 18, 60, 0.6)", "glow": "rgba(225, 29, 72, 0.3)", "border": "#e11d48"},
     "Higiene": {"bg": "rgba(190, 18, 60, 0.6)", "glow": "rgba(225, 29, 72, 0.3)", "border": "#e11d48"},
     "Mercearia": {"bg": "rgba(3, 105, 161, 0.6)", "glow": "rgba(2, 132, 199, 0.3)", "border": "#0284c7"}
 }
@@ -217,8 +218,13 @@ def gerar_html_interativo(df, periodo, total_geral, nome_arquivo):
     </html>"""
 
 # ==========================================
-# 4. MOTORES LÓGICOS ANTI-FALHAS (SUPABASE)
+# 4. MOTORES LÓGICOS ANTI-FALHAS (VELOCIDADE MAX)
 # ==========================================
+
+def limpar_nome_produto(nome_bruto):
+    nome = re.sub(r'\b\d{5,8}\b', '', nome_bruto) 
+    nome = re.sub(r'\d{1,2}-[a-zA-Z]{3}(-\d{2,4})?', '', nome) 
+    return nome.replace('.', '').replace('-', '').strip()[:25]
 
 def limpar_linha_estoque(linha):
     ignorar = ["MERCADINHO", "ENDEREÇO", "PAGINA", "ESTOQUE", "GESTÃO", "SMB STORE", "CNPJ", "TELEFONE", "CÓDIGO"]
@@ -233,35 +239,74 @@ def carregar_regras_banco():
     try:
         res = supabase.table("excecoes_categorias").select("*").execute()
         regras = []
+        stopwords = {"BISC", "BISCOITO", "BOMBOM", "PCT", "UND", "UN", "KG", "DE", "SABOR", "COM", "CHOCO", "CHOCOLATE", "MORANGO", "LATA", "GARRAFA", "PET", "ML", "GR", "G", "CAIXA", "CX", "AO", "LEITE"}
         for r in res.data:
             nome = r['nome_produto']
             cat = r['categoria_destino']
-            palavras = set(nome.split())
+            palavras = {w for w in nome.split() if len(w) > 2 and w not in stopwords}
             regras.append((nome, palavras, cat))
         return regras
     except: return []
 
 def palpite_categoria(nome_bruto, regras_carregadas):
-    txt = ''.join(c for c in unicodedata.normalize('NFD', nome_bruto) if unicodedata.category(c) != 'Mn').upper().strip()
+    txt = ''.join(c for c in unicodedata.normalize('NFD', nome_bruto) if unicodedata.category(c) != 'Mn').upper()
     
+    # 1. REGRAS DO SUPABASE (Sincronizadas com o Estoque do Cliente)
     stopwords = {"BISC", "BISCOITO", "BOMBOM", "PCT", "UND", "UN", "KG", "DE", "SABOR", "COM", "CHOCO", "CHOCOLATE", "MORANGO", "LATA", "GARRAFA", "PET", "ML", "GR", "G", "CAIXA", "CX", "AO", "LEITE"}
-    palavras_txt = [w for w in txt.split() if w not in stopwords and len(w) > 2]
+    palavras_txt = {w for w in txt.split() if len(w) > 2 and w not in stopwords}
     
-    for regra_nome, palavras_regra, categoria_destino in regras_carregadas:
-        if regra_nome in txt or txt in regra_nome: return categoria_destino, False
-        for p in palavras_txt:
-            if p in palavras_regra: return categoria_destino, False
+    for regra_nome, palavras_regra, cat_destino in regras_carregadas:
+        if regra_nome in txt or txt in regra_nome: 
+            return cat_destino, False
+        if palavras_txt and palavras_regra:
+            intersecao = palavras_txt.intersection(palavras_regra)
+            if len(intersecao) >= 2 or (len(palavras_regra) == 1 and len(intersecao) == 1):
+                return cat_destino, False
 
-    dicionario_regex = {
-        "Tabacaria": [r"\bCIGARRO", r"\bPINE\b", r"\bROTHMANS", r"\bGIFT\b", r"\bDUNHILL", r"\bLUCKY\b"],
-        "Bebidas Alcoólicas": [r"\bCERV", r"\bHEINEKEN", r"\bPITU\b", r"\bSKOL", r"\bBRAHMA", r"\bANTARCTICA", r"\bVINHO", r"\bWHISKY", r"\bVODKA", r"\bICE\b", r"\bCOROTE\b"],
-        "Bomboniere": [r"\bTRIDENT\b", r"\bDOCE\b", r"\bBOMBOM", r"\bFINI\b", r"\bCHOC\w*", r"\bBALA\b", r"\bHALLS\b", r"\bBIS\b", r"\bTAMPICO\b"],
-        "Sorvetes": [r"\bSORV", r"\bPICOLE", r"\BACAI\b", r"\bKIBON\b"],
-        "Higiene": [r"\bSABONETE\b", r"\bSHAMPOO\b", r"\bCREME\b", r"\bDENTAL\b", r"\bFRALDA\b", r"\bPAPEL\b", r"\bABSORVENTE\b"]
-    }
-    for cat, padroes in dicionario_regex.items():
-        for p in padroes:
-            if re.search(p, txt): return cat, False
+    # 2. EXCEÇÕES BLINDADAS ANTI-CHOQUE DO SEU CÓDIGO ANTIGO
+    excecoes_choque = [
+        "BATATA DOCE", "ITALAKINHO", "DOCE DE LEITE", "ERVADOCE", "ERVA DOCE", "MARAGOGI DOCE", 
+        "SHAMPOO", "CONDICIONADOR", "CREME SEDA", "KIT SEDA", "CENOURA", "CANETA BIC",
+        "ABSORVENTE", "INFINITY", "EMBALAGEM", "BALANCA", "BALANÇA", "FERMENTO", "ALIMENTO", 
+        "CONDIMENTO", "PIMENTO", "PEQUENO", "MENOS", "MORENO", "VENENO", "FENO", "PLENO", 
+        "SERENO", "TERRENO", "CAMPINEIRO", "DEFINITIVO", "AFINIDADE", "SEDAN", "CIDADAO",
+        "CIDADÃO", "GELATINA", "MACRO", "MICRO", "SAL GROSSO", "SALGROSSO", "MILHO DE PIPOCA",
+        "CHOCOLATE EM PO", "CHOCOLATE EM PÓ", "COBERTURA"
+    ]
+    if any(k in txt for k in excecoes_choque): return "Mercearia", False
+        
+    # 3. REGRAS GERAIS DE CATEGORIAS
+    if any(k in txt for k in ["CT ", "CIGARRO", "PINE", "TREVO", "ROTHMANS", "LUCKY", "FUMO", "SEDA", "GUNDANG", "GUDANG", "EIGHT", "VILA RICA", "ISQUEIRO", "BIC ", "FOSFORO", "MAXIMILIAM", "NISE", "CARTEIRA", "SMOKING", "LANDUS", "ENGLISHMAN", "MARSHAL"]): return "Tabacaria", False
+    if any(k in txt for k in ["CERV", "HEINEKEN", "VINHO", "PITU", "SKOL", "BRAHMA", "51 ", "VODKA", "LOKAL", "BUDWEISER", "ITAIPAVA", "YPIOCA", "IMPERIO", "BEATS", "SPATEN", "CABARE", "CONHAQUE", "DREHER", "DEVASSA", "CACHACA", "CARANGUEJO", "CARANGUEIJO", "BLACK PRINCESS", "PETRA", "GIN "]): return "Bebidas Alcoólicas", False
+    if any(k in txt for k in ["SORV", "PICOLE", "CREMOSIN", "DADA", "PIC ", "PIC STER", "SUNDAE", "KONE", "SKIMO", "GELAT", "STERBINHO", "ACAI"]): return "Sorvetes", False
+    if any(k in txt for k in ["TRIDENT", "DOCE", "BOMBOM", "FINI", "HALLS", "CHICLETE", "CHOCOLATE", "JUJUBA", "PACOCA", "MOLEQUE", "BALA", "ICEKISS", "MENTOS", "CHICLE", "EMBARE", "FREEGELLS", "GOMETS", "BATOM", "SERENATA", "KITKAT", "CHOKREM", "OLHINHO", "PIRULITO", "PESCOCO DE GIRAFA", "DOCINHO", "PIPOCA", "PIPPOS", "TRELOSO", "KRO", "SALGADINHO", "SALG", "WAFER", "WAFFER", "TORRESMINHO", "BOKUS", "BIG-BIG", "BIG BIG", "CLISS", "HAPPY BOL"]): return "Bomboniere", False
+    if any(k in txt for k in ["DIPIRONA", "DORFLEX", "AMOXICILINA", "TORSILAX", "ENO", "PARACETAMOL", "CIMEGRIPE", "NEOSALDINA", "NIMESULIDA", "NEOLEFRIN", "DICLOFENACO"]): return "Remédios", False
+
+    # 4. MERCEARIA EXPLÍCITA E FALLBACK
+    mercearia_explicita = [
+        "RACAO", "PAO", "PAES", "COENTRO", "QUEIJO", "LACTEA", "FEIJOADA", "SABAO", "MARGARINA", "MARG ",
+        "MACARRAO", "MAC ", "FARINHA", "PIMENTAO", "LEITE", "OLEO", "CAFE", "OVO", "AMENDOIM", "BATATA", "BATATINHA",
+        "BOLACHA", "REQUEIJAO", "LINGUICA", "LING ", "MISTURA", "CARNE", "ALHO", "SAZON", "LAMEN", "MIOJO",
+        "NISSIM", "PAPEL", "SARDINHA", "DESINF", "SALSICHA", "BISCOITO", "IOGURTE", "ESCOVA", "LAMINA",
+        "CREME", "EMPANADO", "CEBOLA", "GOMA", "FRANGO", "COXA", "HAMBURGUER", "MILHO",
+        "AGUA SANIT", "SAL ", "BOTIJAO", "MOLHO", "MACAXEIRA", "BISTECA", "BRILHOTEX",
+        "LIMPOL", "SABONETE", "REXONA", "AMACIANTE", "CALDO", "FLOCAO", "FLOKAO", "MAIZENA",
+        "ESPONJA", "ESP ", "ACUCAR", "COLORAL", "FIGADO", "DANONE", "PEITO",
+        "DUMEL", "NATVILLE", "TOMATE", "LIMAO", "ROSQUINHA", "AGUA OXIGENADA", "HASTES", "COTTON",
+        "AGUA SCHIN", "KAPO", "REFRESCO", "AGUA MINERAL", "COCA", "AGUA DE COCO", "REFRIGERANTE", "DORE", "CC ORIG", "GUARANA",
+        "FANTA", "SPRITE", "PEPSI", "ENERGETICO", "MONSTER", "RED BULL", "TANG", "FRISCO", "MID", "SUKITA", "KUAT", "FYS",
+        "ACHOC", "NESCAU", "ARROZ", "AVEIA", "AZEITONA", "BANANA", "CATCHUP", "KETCHUP", "CHARQUE", "DOWNY", "YPÊ", "MINUANO",
+        "ABSOLUTO", "ALICE", "SONHO", "JOHNSONS", "EVEN", "PROTEX", "ALBANY", "SIENE", "COLGATE", "SORRISO", "ORAL B", "SKALA",
+        "PRESTOBARBA", "GILLETTE", "PROBAK", "HERBISSIMO", "COTONETE", "ALGODAO", "GAS ", "CARVAO", "GELO", "PILHA", "RAIOVAC",
+        "VASSOURA", "VELA", "MUCILON", "CREMOGEMA", "CHIMICHURRI", "COMINHO", "OREGANO", "LOURO", "PIMENTA",
+        "BISC ", "PANETONE", "TORRADA", "SASSAMI", "FILE", "MOELA", "CORACAO", "BACON", "PRESUNTO", "FIAMBRE",
+        "BOLDO", "TEMPERO", "DETERGENTE", "DETERG ", 
+        "POLPA", "FEIJAO", "DUETO", "TAMPICO", "OSSINHO", "PINCA", "PINÇAS", "COCOROTE", "LARANJA", "ACAFRAO", 
+        "DEL VALLE", "ULTRA COLA", "MORTADELA", "ASA ", "TODYNHO", "TODDY", "CAMOMILA", "FRALDA", "FERMENTO", "RAPADURA", "GALINHA",
+        "SEMPRE LIVRE", "CALABRESA", "VINAGRE", "SKINKA", "REMOVEDOR", "ESMALTE", "H2O", "MARACUJA", "ABACATE", "SODA", "COCO", "SUPER SIGMA", "CREAM CRACKER",
+        "ENERGY", "MAGNETO", "ALCOOL", "BEB FRUIT", "BEB FRUT", "BICARBONATO", "BORRACHA", "ADIFLOR", "POWERADE", "ROLLON", "AVON", "MUSK", "SUKINHO", "VALE PRESENTE", "WHISKAS", "ITI "
+    ]
+    if any(k in txt for k in mercearia_explicita): return "Mercearia", False
     return "Mercearia", True
 
 def processar_pdf(file):
@@ -274,21 +319,31 @@ def processar_pdf(file):
         periodo = f"{match_d.group(1)} a {match_d.group(2)}" if match_d else "DATA DESCONHECIDA"
         
         for page in pdf.pages:
-            linhas = (page.extract_text() or "").split('\n')
-            for l in linhas:
-                valores = re.findall(r'\d+,\d{2}', l)
-                if len(valores) >= 4:
-                    ean_m = re.search(r'\b\d{7,14}\b', l)
-                    n_limpo = l.replace(ean_m.group(), "") if ean_m else l
-                    n_limpo = re.sub(r'\b\d{4,8}\b', '', n_limpo).strip()[:35].upper()
-                    val_unit = float(valores[-4].replace(',', '.'))
-                    cat, is_fallback = palpite_categoria(n_limpo, regras)
-                    dados.append({"Nome": n_limpo, "Cat": cat, "Valor": val_unit, "Fallback": is_fallback})
+            texto_limpo = (page.extract_text() or "").replace('"', '').replace('\r', '')
+            linhas = texto_limpo.split('\n')
+            for linha in linhas:
+                if "TOTAL" in linha.upper() or "PÁGINA" in linha.upper(): continue
+                try:
+                    valores = re.findall(r'\d+,\d{2}', linha)
+                    if len(valores) >= 4:
+                        ean_m = re.search(r'\b\d{7,14}\b', linha)
+                        if not ean_m: continue
+                        str_sem_ean = linha.replace(ean_m.group(), "").strip()
+                        partes = re.split(r'\s*\b\d+,\d{2}\b', str_sem_ean)
+                        n_bruto = partes[0].strip()
+                        n_bruto = re.sub(r'\s+(UN|KG|CX|PCT|L|ML|G|KIT|M|DZ|BD|FD)\b$', '', n_bruto, flags=re.IGNORECASE).strip()
+                        
+                        nome_limpo = limpar_nome_produto(n_bruto)
+                        # CORREÇÃO CRÍTICA DO VALOR: O -1 GARANTE QUE É O TOTAL DA LINHA E NÃO A QUANTIDADE
+                        val = float(valores[-1].replace(',', '.')) 
+                        
+                        cat, is_fallback = palpite_categoria(nome_limpo, regras)
+                        dados.append({"Nome": nome_limpo, "Cat": cat, "Valor": val, "Fallback": is_fallback})
+                except Exception as e: continue
     return dados, periodo
 
 def consumir_cota(username):
     if username not in ["madson", "admin"]:
-        # Busca o valor atual e subtrai 1
         res = supabase.table("usuarios").select("limite_pdf").eq("username", username).execute()
         if res.data:
             novo_limite = int(res.data[0]['limite_pdf']) - 1
@@ -321,7 +376,6 @@ elif st.session_state.get("authentication_status") is False:
     st.error("Credenciais inválidas. Verifique o seu login e senha.")
 
 else:
-    # --- MESA LIMPA ---
     user_logado = st.session_state['username']
     info_usr = dados_logados.get(user_logado, {})
     is_admin = user_logado in ["madson", "admin"]
@@ -329,30 +383,19 @@ else:
     if 'arquivo_carregado' not in st.session_state: st.session_state.arquivo_carregado = None
     if 'cat_expandida' not in st.session_state: st.session_state.cat_expandida = None
 
-    # --- MENU LATERAL FLUIDO ---
     st.sidebar.markdown(f"<h3 style='color:#ffffff; font-size:clamp(12px, 1.2vw, 15px); font-weight:700; margin-bottom: 12px;'>Olá, {st.session_state['name']}</h3>", unsafe_allow_html=True)
     
-    # GERAÇÃO DINÂMICA DE BLOQUEIO VISUAL (CSS)
     css_bloqueio = ""
     if not is_admin:
-        # Bloqueia a Central de Permissões (4º item)
         css_bloqueio += """
-        div[role="radiogroup"] > label:nth-child(4) {
-            opacity: 0.3 !important; filter: grayscale(100%) !important; cursor: not-allowed !important; pointer-events: auto !important;
-        }
-        div[role="radiogroup"] > label:nth-child(4):hover::after {
-            content: "Acesso Exclusivo do Administrador.";
-            position: absolute; top: 100%; left: 0%; width: 100%; background: #e11d48; color: white;
-            padding: 5px 0; border-radius: 6px; font-size: 10px; text-align: center; z-index: 99999; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        }
+        div[role="radiogroup"] > label:nth-child(4) { opacity: 0.3 !important; filter: grayscale(100%) !important; cursor: not-allowed !important; pointer-events: auto !important; }
+        div[role="radiogroup"] > label:nth-child(4):hover::after { content: "Acesso Exclusivo do Administrador."; position: absolute; top: 100%; left: 0%; width: 100%; background: #e11d48; color: white; padding: 5px 0; border-radius: 6px; font-size: 10px; text-align: center; z-index: 99999; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         """
-        # Bloqueia Lote (2º item) se não tiver permissão
         if not info_usr.get("acesso_lote"):
             css_bloqueio += """
             div[role="radiogroup"] > label:nth-child(2) { opacity: 0.3 !important; filter: grayscale(100%) !important; cursor: not-allowed !important; pointer-events: auto !important; }
             div[role="radiogroup"] > label:nth-child(2):hover::after { content: "Assinatura não contempla lotes."; position: absolute; top: 100%; left: 0%; width: 100%; background: #e11d48; color: white; padding: 5px 0; border-radius: 6px; font-size: 10px; text-align: center; z-index: 99999; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
             """
-        # Bloqueia Exceções (3º item) se não tiver permissão
         if not info_usr.get("acesso_excecoes"):
             css_bloqueio += """
             div[role="radiogroup"] > label:nth-child(3) { opacity: 0.3 !important; filter: grayscale(100%) !important; cursor: not-allowed !important; pointer-events: auto !important; }
@@ -364,17 +407,12 @@ else:
     pagina = st.sidebar.radio("Navegação", opcoes_menu, label_visibility="collapsed")
     st.sidebar.markdown("---")
     
-    # Cota e Trial na Sidebar
     if not is_admin:
         cota_atual = info_usr.get("limite_pdf", 0)
         validade = info_usr.get("dias_trial", 0)
         st.sidebar.markdown(f"<div style='background:rgba(255,255,255,0.02); padding:8px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);'><p style='color:#94a3b8; font-size:9px; margin:0;'>Uploads Restantes: <b style='color:#38bdf8; font-size:11px;'>{cota_atual}</b></p><p style='color:#94a3b8; font-size:9px; margin:4px 0 0 0;'>Dias de Acesso: <b style='color:#38bdf8; font-size:11px;'>{validade}</b></p></div>", unsafe_allow_html=True)
 
     authenticator.logout("Encerrar Sessão", "sidebar")
-
-    # ==========================================
-    # ROTEAMENTO E TELAS
-    # ==========================================
 
     if pagina == "Análise de Relatório":
         cota_usuario = info_usr.get("limite_pdf", 0)
