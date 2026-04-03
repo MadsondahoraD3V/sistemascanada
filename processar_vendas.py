@@ -16,7 +16,7 @@ key: str = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
 # ==========================================
-# 2. CONFIGURAÇÕES VISUAIS E CSS (ENTERPRISE UX)
+# 2. CONFIGURAÇÕES VISUAIS E CSS (INTOCADO)
 # ==========================================
 st.set_page_config(page_title="Canadá BI - Corporate", layout="wide")
 
@@ -125,7 +125,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. HTML GERADOR DE RELATÓRIOS
+# 3. HTML GERADOR DE RELATÓRIOS (INTOCADO)
 # ==========================================
 CORES_CATEGORIAS = {
     "Tabacaria": {"bg": "rgba(30, 41, 59, 0.7)", "glow": "rgba(51, 65, 85, 0.4)", "border": "#475569"},
@@ -218,7 +218,7 @@ def gerar_html_interativo(df, periodo, total_geral, nome_arquivo):
     </html>"""
 
 # ==========================================
-# 4. MOTORES LÓGICOS ANTI-FALHAS (VELOCIDADE MAX)
+# 4. MOTORES LÓGICOS ANTI-FALHAS E MATEMÁTICA CORRIGIDA
 # ==========================================
 
 def limpar_nome_produto(nome_bruto):
@@ -251,7 +251,6 @@ def carregar_regras_banco():
 def palpite_categoria(nome_bruto, regras_carregadas):
     txt = ''.join(c for c in unicodedata.normalize('NFD', nome_bruto) if unicodedata.category(c) != 'Mn').upper()
     
-    # 1. REGRAS DO SUPABASE (Sincronizadas com o Estoque do Cliente)
     stopwords = {"BISC", "BISCOITO", "BOMBOM", "PCT", "UND", "UN", "KG", "DE", "SABOR", "COM", "CHOCO", "CHOCOLATE", "MORANGO", "LATA", "GARRAFA", "PET", "ML", "GR", "G", "CAIXA", "CX", "AO", "LEITE"}
     palavras_txt = {w for w in txt.split() if len(w) > 2 and w not in stopwords}
     
@@ -263,7 +262,6 @@ def palpite_categoria(nome_bruto, regras_carregadas):
             if len(intersecao) >= 2 or (len(palavras_regra) == 1 and len(intersecao) == 1):
                 return cat_destino, False
 
-    # 2. EXCEÇÕES BLINDADAS ANTI-CHOQUE DO SEU CÓDIGO ANTIGO
     excecoes_choque = [
         "BATATA DOCE", "ITALAKINHO", "DOCE DE LEITE", "ERVADOCE", "ERVA DOCE", "MARAGOGI DOCE", 
         "SHAMPOO", "CONDICIONADOR", "CREME SEDA", "KIT SEDA", "CENOURA", "CANETA BIC",
@@ -275,14 +273,12 @@ def palpite_categoria(nome_bruto, regras_carregadas):
     ]
     if any(k in txt for k in excecoes_choque): return "Mercearia", False
         
-    # 3. REGRAS GERAIS DE CATEGORIAS
     if any(k in txt for k in ["CT ", "CIGARRO", "PINE", "TREVO", "ROTHMANS", "LUCKY", "FUMO", "SEDA", "GUNDANG", "GUDANG", "EIGHT", "VILA RICA", "ISQUEIRO", "BIC ", "FOSFORO", "MAXIMILIAM", "NISE", "CARTEIRA", "SMOKING", "LANDUS", "ENGLISHMAN", "MARSHAL"]): return "Tabacaria", False
     if any(k in txt for k in ["CERV", "HEINEKEN", "VINHO", "PITU", "SKOL", "BRAHMA", "51 ", "VODKA", "LOKAL", "BUDWEISER", "ITAIPAVA", "YPIOCA", "IMPERIO", "BEATS", "SPATEN", "CABARE", "CONHAQUE", "DREHER", "DEVASSA", "CACHACA", "CARANGUEJO", "CARANGUEIJO", "BLACK PRINCESS", "PETRA", "GIN "]): return "Bebidas Alcoólicas", False
     if any(k in txt for k in ["SORV", "PICOLE", "CREMOSIN", "DADA", "PIC ", "PIC STER", "SUNDAE", "KONE", "SKIMO", "GELAT", "STERBINHO", "ACAI"]): return "Sorvetes", False
     if any(k in txt for k in ["TRIDENT", "DOCE", "BOMBOM", "FINI", "HALLS", "CHICLETE", "CHOCOLATE", "JUJUBA", "PACOCA", "MOLEQUE", "BALA", "ICEKISS", "MENTOS", "CHICLE", "EMBARE", "FREEGELLS", "GOMETS", "BATOM", "SERENATA", "KITKAT", "CHOKREM", "OLHINHO", "PIRULITO", "PESCOCO DE GIRAFA", "DOCINHO", "PIPOCA", "PIPPOS", "TRELOSO", "KRO", "SALGADINHO", "SALG", "WAFER", "WAFFER", "TORRESMINHO", "BOKUS", "BIG-BIG", "BIG BIG", "CLISS", "HAPPY BOL"]): return "Bomboniere", False
     if any(k in txt for k in ["DIPIRONA", "DORFLEX", "AMOXICILINA", "TORSILAX", "ENO", "PARACETAMOL", "CIMEGRIPE", "NEOSALDINA", "NIMESULIDA", "NEOLEFRIN", "DICLOFENACO"]): return "Remédios", False
 
-    # 4. MERCEARIA EXPLÍCITA E FALLBACK
     mercearia_explicita = [
         "RACAO", "PAO", "PAES", "COENTRO", "QUEIJO", "LACTEA", "FEIJOADA", "SABAO", "MARGARINA", "MARG ",
         "MACARRAO", "MAC ", "FARINHA", "PIMENTAO", "LEITE", "OLEO", "CAFE", "OVO", "AMENDOIM", "BATATA", "BATATINHA",
@@ -324,22 +320,26 @@ def processar_pdf(file):
             for linha in linhas:
                 if "TOTAL" in linha.upper() or "PÁGINA" in linha.upper(): continue
                 try:
-                    valores = re.findall(r'\d+,\d{2}', linha)
+                    # Captura qualquer número com casa decimal e separador de milhar
+                    valores = re.findall(r'[\d\.]+,\d{2}', linha)
                     if len(valores) >= 4:
                         ean_m = re.search(r'\b\d{7,14}\b', linha)
                         if not ean_m: continue
-                        str_sem_ean = linha.replace(ean_m.group(), "").strip()
-                        partes = re.split(r'\s*\b\d+,\d{2}\b', str_sem_ean)
-                        n_bruto = partes[0].strip()
-                        n_bruto = re.sub(r'\s+(UN|KG|CX|PCT|L|ML|G|KIT|M|DZ|BD|FD)\b$', '', n_bruto, flags=re.IGNORECASE).strip()
                         
+                        str_sem_ean = linha.replace(ean_m.group(), "").strip()
+                        
+                        # CAPTURA DO NOME EXATO: Pega tudo antes do primeiro valor numérico da linha
+                        n_bruto = str_sem_ean.split(valores[0])[0].strip()
+                        n_bruto = re.sub(r'\s+(UN|KG|CX|PCT|L|ML|G|KIT|M|DZ|BD|FD)\b$', '', n_bruto, flags=re.IGNORECASE).strip()
                         nome_limpo = limpar_nome_produto(n_bruto)
                         
-                        # ========================================================
-                        # CORREÇÃO APLICADA AQUI: RESTAURADO PARA O VALOR [-4]
-                        # DA REGRA ORIGINAL DO MOTOR ANTIGO.
-                        # ========================================================
-                        val = float(valores[-4].replace(',', '.'))
+                        # CAPTURA DO VALOR BRUTO EXATO:
+                        # As colunas são Qtd | V.Unit | V.Bruto | V.Desc | V.Liquido
+                        # O Valor Bruto é ESTRITAMENTE o 3º item contando do final (posição -3)
+                        v_bruto_str = valores[-3]
+                        
+                        # Converte '1.200,50' para float sem dar erro de matemática
+                        val = float(v_bruto_str.replace('.', '').replace(',', '.'))
                         
                         cat, is_fallback = palpite_categoria(nome_limpo, regras)
                         dados.append({"Nome": nome_limpo, "Cat": cat, "Valor": val, "Fallback": is_fallback})
@@ -354,7 +354,7 @@ def consumir_cota(username):
             supabase.table("usuarios").update({"limite_pdf": novo_limite}).eq("username", username).execute()
 
 # ==========================================
-# 5. AUTENTICAÇÃO E ROTEAMENTO DE INTERFACE
+# 5. AUTENTICAÇÃO E ROTEAMENTO DE INTERFACE (INTOCADO)
 # ==========================================
 try:
     res_user = supabase.table("usuarios").select("*").execute()
@@ -500,7 +500,7 @@ else:
                     else:
                         st.markdown("""<div style="background:rgba(15, 23, 42, 0.4); padding:20px; border-radius:12px; text-align:center; border: 1px dashed rgba(255,255,255,0.1);"><p style="color:#64748b; font-size:11px; font-weight:500; margin:0;">Selecione uma categoria ao lado para inspecionar os itens.</p></div>""", unsafe_allow_html=True)
 
-                st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin-top:15px; margin-bottom:20px;'>", unsafe_allow_html=True)
+                st.markdown("<hr style='border-color:rgba(255,255,255,0.05); margin:10px 0;'>", unsafe_allow_html=True)
                 
                 with st.expander("🔎 Auditoria do Motor (Itens sem Regra Específica)"):
                     df_fallback = df[df['Fallback'] == True]
